@@ -24,19 +24,23 @@ Existing mutual authentication implementations put several restrictions upon use
 * Pluggable for existing certificate management systems (SPIFFE, Vault, SMI, Istio, cert-manager, …)
 * Configurable certificate granularity
 * Leverage existing encryption protocol support for the dataplane
+* Minimize packets dropped as far as possible in a reasonable amount of effort.
 
 
 ## Non-Goals
 
 * Inline authentication via a proxy
-* Drop less connection establishment
+* Guaranteed no-drop connection establishment
 
 
 ## Proposal
 
 ### Overview
 
-The Isovalent blog Next-Generation Mutual Authentication with Cilium Service Mesh described the high level design for mutual authentication where there are two channels for connectivity: Firstly, a control plane connection between cilium-agent instances on each node provides authentication of connections between pods on the nodes. Secondly, the existing Cilium encryption support using WireGuard or IPsec provides an encrypted dataplane for the connections. This document seeks to describe the per-node implementation that coordinates these out-of-band authentication channels with the in-band network encryption channels.
+The Isovalent blog [Next-Generation Mutual Authentication with Cilium Service Mesh](https://isovalent.com/blog/post/2022-05-03-servicemesh-security/)
+described the high level design for mutual authentication where there are two channels for connectivity:
+Firstly, a control plane connection between cilium-agent instances on each node provides authentication of connections between pods on the nodes.
+Secondly, the existing Cilium encryption support using WireGuard or IPsec provides an encrypted dataplane for the connections. This document seeks to describe the per-node implementation that coordinates these out-of-band authentication channels with the in-band network encryption channels.
 
 Here is a diagram showing the key parts of the design
 
@@ -46,22 +50,20 @@ The following sub-sections are broken up by the aspects of the design where spec
 
 ### Resources
 
-TODO: This section needs an update.
+This is an example of what the config will look like; it's likely that extra fields will need to be added as part of the implementation process.
 
 #### ConfigMap - cilium-config
 
 * option-name: `default`
   * description
 * mesh-auth-mode: `disabled`
-  * enabled / disabled
-* mesh-auth-cert-source: `spiffe`
-  * Configure certificate mechanism, default to directory path
-* mesh-spire-server: `____`
+  * disabled / spiffe / other
+* mesh-auth-spire-server: `____`
   * Configure the spire server
-* mesh-spire-agent: `unix://var/run/cilium/spiffe/agent.sock`
-  * Configure the SPIRE agent
-* mesh-auth-path: `/var/run/cilium/auth/`
-  * Configure the directory to pull certificates from, if mesh-auth-cert is directory
+* mesh-auth-spire-agent: `unix://var/run/cilium/spiffe/admin/admin.sock`
+  * Configure the SPIRE agent socket
+* mesh-auth-spire-server: `unix://var/run/cilium/spiffe/server/server.sock`
+  * Configure the SPIRE Server socket for the operator
 * mesh-auth-port: `4250`
   * Each agent opens this port for mutual authentication
   * TODO review port for conflicts
@@ -84,7 +86,7 @@ spec:
     - matchLabels:
         run: sshd
     auth:
-       enabled: true
+       type: spiffe
 ```
 
 * Semantics are:
@@ -92,7 +94,7 @@ spec:
   * Allow traffic to pods with the label `run: sshd`
   * Require authentication for these connections
   * Enable default deny
-* Initially, require `toEndpoints` field when the `auth` field is set
+* Initially, require `toEndpoints` field when the `auth.type` field is set
   * Cannot provide mTLS with cluster-external peers
   * Cannot provide mTLS with cluster entities
 * If there are two conflicting policies, one that requires authentication and one that does not require authentication, then authentication will be required
@@ -122,9 +124,9 @@ Cons:
 
 #### Other options for SPIFFE identity
 
-##### Cert-manager CSI driver
+##### cert-manager CSI driver
 
-Cert-manager has a SPIFFE-capable CSI plugin that makes SVIDs, including the X.509 TLS keypair, available as a dynamically-mounted Secret inside Kubernetes Pods. Because we don’t want the Pods to need to mount things for mTLS, this is not viable, unfortunately.
+cert-manager has a SPIFFE-capable CSI plugin that makes SVIDs, including the X.509 TLS keypair, available as a dynamically-mounted Secret inside Kubernetes Pods. Because we don’t want the Pods to need to mount things for mTLS, this is not viable, unfortunately.
 
 ##### Istio
 
@@ -176,20 +178,25 @@ This diagram shows the way the API flows work. It’s assumed before we start th
 Then, when required (whether we do this at Endpoint creation or later is still TBD):
 1. All cilium-agents running a workload mentioned in an auth-enabled policy connect to their local spire-agent, and watch a set of SPIFFE labels that includes the labels for the relevant SVID. The cilium-agent identity is allowed to do Delegated Identity requests to the Workload API (WL API), so this is allowed.
 1. The spire-agent watches SVIDs on the SPIRE server, sees any updates to all relevant SVIDs, and passes them back to the cilium-agent.
-1. The cilium-agent there figures out where the request is coming from, and connects to the cilium-agent on the source node to perform the mTLS handshake. Because this is a mutual TLS, if it succeeds, then the workloads are authenticated.
+1. The cilium-agent then figures out where the request is coming from, and connects to the cilium-agent on the source node to perform the mTLS handshake. Because this  a mutual TLS, if it succeeds, then the workloads are authenticated.
+The destination node will also record that the workload is authenticated for reverse traffic.
 1. The mTLS handlers in each cilium-agent then pass the auth success to their local dataplane, by telling it that identity A is authenticated to identity B for some period of time (the lifetime of the certificates in the mTLS handshake).
+The mTLS handlers will also need to indicate the remote node, along with the auth type.
 For that lifetime, traffic between Identity A and Identity B will flow without further checks.
 
 #### SPIFFE installation steps and flow
 
-1. Cluster gets created, without CNI, per usual Cilium install
+1. Cluster gets created, without CNI, per usual Cilium install process. 
 1. Cilium installed, with mTLS enabled, includes SPIRE Server and Cilium Agent SPIFFE Identity
 1. mTLS enabled install also includes per-node SPIRE agent. The SPIRE agent talks to the SPIRE server over the network, but all other communication with the Cilium Agent is via domain sockets shared on the host's filesystem.
 1. Cilium starts up as normal, acts as CNI.
 1. Cilium also contacts the local SPIRE agent at startup (via a domain socket shared on the host's filesystem) to watch the Delegated Identity API and gets its own SPIFFE identity via the SPIRE workload API.
-1. When generating Cilium Security Identities for identities with mTLS auth enabled, Cilium (could be agent or operator) also records the SPIFFE identity.
+1. When generating Cilium Security Identities for identities with mTLS auth enabled, Cilium (could be agent or operator) in SPIFFE mode also records the SPIFFE identity (that is, the string `spiffe://spiffe.cilium.io/ciliumidentity/1337` or similar).
+For SPIRE implementations, A separate flow is kicked off here to create the required SPIRE server entries by the Cilium operator.
 1. When checking auth-enabled policy, the datapath will flag that there is no entry in the auth table for the flow, and then the agent will use its cache of keypairs to handshakes with the agent on the other end of the connection (either source node agent will reach out to destination node agent, or vice versa), and performs a TLS handshake. Note that an optimization which may be included here is that the agent may pre-authenticate identities that it knows will need it, if we can make that work.
 1. If the TLS handshake succeeds, then the connection is authenticated and the traffic protected by policy can proceed. The TLS connection between the agents can then be torn down and thrown away (since it’s not being used to tunnel the encrypted traffic through).
+1. The details of the particular flow will be saved to the auth table; note that this needs to include the remote node the auth was performed with.
+It's not possible to reuse an identity-identity handshake across nodes without making bad-node attacks much easier.
 
 
 ### Control Plane
@@ -198,9 +205,9 @@ For that lifetime, traffic between Identity A and Identity B will flow without f
 
 Auth table - a BPF table needs to be added that records, at least:
 
-* Source Identity
-* Destination Identity
-* Destination Node
+* Local Identity
+* Remote Identity
+* Remote Node IP
 * Authentication expiry time
 
 Further details of this table will be worked out as part of the implementation.
@@ -218,11 +225,14 @@ Notably, this means that _one_ Pod out of the Operator deployment must be runnin
 ##### Between Cilium Agent instance peers
 Mutual authentication connections are established between the node IPs themselves. However, the peers that require authentication will not be these nodes.
 
-The source agent determines the destination agent using the destination endpoint IP. It then reaches out and connects to the listening port on the destination agent, and completes a TLS handshake. After the TLS handshake is complete, the session is torn down, as all the relevant information has been required. (Namely, did the authentication work, and when do the client and server expire?)
+The source agent determines the destination agent using the destination endpoint IP. It then reaches out and connects to the listening port on the destination agent, and completes a TLS handshake.
+After the TLS handshake is complete, the session is torn down, as all the relevant information has been required. (Namely, did the authentication work, and when do the client and server expire?)
+For the destination agent, this process is reversed (an incoming connection from identity A to B _from_ node A will create an entry with A, B, and Node A on Node B, whereas on Node A, the entry will have A, B, and Node B.)
 
 This design has a few wins here:
 - The Authentication only requires that the TLS Handshake succeed, it does not require that we keep the connection open, so we will be making short lived connections for each authentication check, and this will most likely need to be to a new, dedicated port.
-- Because we will be controlling both ends of the TLS handshake, we can use any field we like in the certificates for authentication - SPIFFE certificates issued by SPIRE have the full SPIFFE ID URI as a SAN field, so we can use that for choosing both client and server certificates - the TLS request from the client will be requesting the full SPIFFE ID as its URI.
+- Because we will be controlling both ends of the TLS handshake, we can use any field we like in the certificates for authentication - SPIFFE certificates issued by SPIRE have the full SPIFFE ID URI as a SAN field, so we can use that for choosing both client and server certificates.
+However, because the TLS handshake can only use a hostname for SNI, we'll need to make a standard "hostname" that encodes the source and destination security identities, probably something like `<sourceidentity>.<destinationidentity>.<trustdomain>`.
 - Because of the preceding points, having this port open is only risking buffer overflows etc, not incorrectly routing to some service. Additionally, because the SPIFFE IDs in use will only have the trust domain and Cilium Identity number in the URI, there's not much information leakage possible.
 
 
@@ -236,6 +246,7 @@ This design has a few wins here:
 
 ##### CiliumNetworkPolicy creation
 Parse CNPs for the new authentication field. When this is present, as part of policy plumbing, set a new field in the policymap entries that indicates that authentication is required for connectivity to this peer.
+This process will be skipped if the `mesh-auth-mode` config directive is not set.
 
 ##### Triggered by datapath drop
 * When the datapath generates a datapath drop message with the reason that "authentication is required" for this peer, look up the corresponding node and establish an mTLS connection to the peer node. Connects to the port outlined in the Startup section above.
@@ -278,6 +289,7 @@ Dedicated bpf auth map, see Key question: How to implement dataplane auth check
 When performing policy lookup, check 'authentication required' bit.
 If this bit is set and there is no corresponding entry in the BPF auth table, drop the traffic and emit an 'authentication required' event to the local control plane.
 Ensure both egress and ingress implement this logic.
+For source and destination on the same node, the node will connect to itself and perform a handshake.
 
 #### Proxy
 For an initial target, do not support Envoy participating in the service mesh, although the amount of work can be checked once we've done other things.
@@ -322,6 +334,9 @@ The above outline describes the process at the source node. A similar process ne
   * Total authentication sessions in the cilium-agent (inbound vs. outbound)
   * SPIFFE ID registration time (during CNI ADD)
   * TLS Session authentication time (during connection establishment) 
+  * New SPIFFE Identities (with expiry age)
+  * Updated SPIFFE Identities (with expiry age)
+  * mTLS Handshake stats (succeeded, failed, reasons, etc.)
   * Your metrics suggestions here
 
 
@@ -402,7 +417,7 @@ Cons
 More expensive per-packet to look up an additional map using packet fields
 Additional memory overhead (~N MB)
 
-Implementation details
+###### Implementation details
 Q: How big to make the auth map in BPF? Depends on the key type and target number of peers in the cluster. Assuming ~16B for IPv4 + ~40B for IPv6, => 56 (round to 64B), 64K peers could be supported in ~4MB of memory. This comes down to 1.5MB or less if keyed by identity.
 Key
 We will only support 1:1 certificate to identity, the key could be the local+remote identities:
@@ -437,6 +452,3 @@ Validate that a workload is supposed to be running on the target node. Mitigate 
 
 ### Deferred Milestone 3
 Negotiate encryption key in mTLS connection
-
-### Deferred Milestone 4
-Transmit metadata on authentication connection. What is the identity of the sender? Does not require the application to be running HTTP, encoding in HTTP headers in-band
