@@ -232,7 +232,7 @@ For the destination agent, this process is reversed (an incoming connection from
 This design has a few wins here:
 - The Authentication only requires that the TLS Handshake succeed, it does not require that we keep the connection open, so we will be making short lived connections for each authentication check, and this will most likely need to be to a new, dedicated port.
 - Because we will be controlling both ends of the TLS handshake, we can use any field we like in the certificates for authentication - SPIFFE certificates issued by SPIRE have the full SPIFFE ID URI as a SAN field, so we can use that for choosing both client and server certificates.
-However, because the TLS handshake can only use a hostname for SNI, we'll need to make a standard "hostname" that encodes the source and destination security identities, probably something like `<sourceidentity>.<destinationidentity>.<trustdomain>`.
+However, because the TLS handshake can only use a hostname for SNI, we'll need to make a standard "hostname" that encodes the source and destination security identities, probably something like `<destinationidentity>.<trustdomain>`, since the source identity is available from the client certificate.
 - Because of the preceding points, having this port open is only risking buffer overflows etc, not incorrectly routing to some service. Additionally, because the SPIFFE IDs in use will only have the trust domain and Cilium Identity number in the URI, there's not much information leakage possible.
 
 
