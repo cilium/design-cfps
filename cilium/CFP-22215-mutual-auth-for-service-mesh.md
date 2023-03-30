@@ -131,7 +131,7 @@ cert-manager has a SPIFFE-capable CSI plugin that makes SVIDs, including the X.5
 
 ##### Istio
 
-The Istio control plane issues SPIFFE IDs to all workloads, but it seems to do it on a per-service-hostname basis, which also doesn’t match up well with the Cilium Security ID.
+The Istio control plane issues SPIFFE IDs to all workloads, but it does it on a per-service-hostname basis, which also doesn’t match up well with the Cilium Security ID.
 
 ##### Other mTLS options
 
@@ -196,7 +196,7 @@ For that lifetime, traffic between Identity A and Identity B will flow without f
     * (This document will be updated after [#23806](https://github.com/cilium/cilium/issues/23806) is done.)
 1. Cilium agent starts up as normal, acts as CNI.
 1. Cilium agent also contacts the local SPIRE agent at startup (via a domain socket shared on the host's filesystem) to watch the Delegated Identity API and gets its own SPIFFE identity via the SPIRE workload API.
-1. When generating Cilium Security Identities for identities with mTLS auth enabled, Cilium Operator in SPIFFE mode also records the SPIFFE identity (that is, the string `spiffe://spiffe.cilium.io/identity/1337`).
+1. When generating Cilium Security Identities for identities with mTLS auth enabled, Cilium Operator in SPIFFE mode also records the SPIFFE identity (that is, the string `spiffe://spiffe.cilium/identity/1337`).
 For SPIRE implementations, the Cilium Operator also creates the required SPIRE server entries.
 1. When checking auth-enabled policy, the datapath will flag that there is no entry in the auth table for the flow, and then the agent will use its cache of keypairs to handshakes with the agent on the other end of the connection (either source node agent will reach out to destination node agent, or vice versa), and performs a TLS handshake. Note that an optimization which may be included here is that the agent may pre-authenticate identities that it knows will need it, if we can make that work.
 1. If the TLS handshake succeeds, then the connection is authenticated and the traffic protected by policy can proceed. The TLS connection between the agents can then be torn down and thrown away (since it’s not being used to tunnel the encrypted traffic through).
