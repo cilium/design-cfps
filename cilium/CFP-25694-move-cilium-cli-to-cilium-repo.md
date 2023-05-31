@@ -17,16 +17,33 @@ Move [cilium/cilium-cli] code into [cilium/cilium] repository.
 ## Motivation
 
 The main motivation for moving [cilium/cilium-cli] code into [cilium/cilium]
-repository is to minimize the feature development overhead for:
+repository is to minimize the feature development overhead for adding new tests
+to `cilium connectivity test`.
 
-- adding new tests to `cilium connectivity test`.
-- adding new tasks to `cilium sysdump`.
+Currently, adding a new test to `cilium connectivity test` requires the following
+steps:
+
+- Open a pull request against [cilium/cilium-cli] repo to add a new test, and
+  wait for the CI build to finish.
+- Modify GitHub workflows files to pick up the CI version of `cilium-cli` in
+  your pull request against [cilium/cilium] repo.
+- Once the new tests passes, undo the change in the workflow files.
+- Get these pull requests reveiewed and merged.
+
+Even after all these steps, the new test does not become a part of the regular
+CI until the [sig-cilium-cli] team releases a new version of `cilium-cli` that
+includes the test, and Renovate updates GitHub wokflow files to pick up the new
+`cilium-cli` version. This has been a major source of frustration for some Cilium
+contributors.
 
 ## Goals
 
-* Move [cilium/cilium-cli] code into [cilium/cilium] main branch under `cli/` directory.
+* Move [cilium/cilium-cli] code into [cilium/cilium] main branch under `cli/`
+  directory. This enables Cilium contributors to implement new features with
+  tests in a single pull request against [cilium/cilium] repository.
 * Establish a backporting process for changes inside `cli/` directory.
-* Don't disrupt the cilium-cli development and release processes.
+* Avoid disrupting the cilium-cli development and release processes as much as
+  possible.
 
 ## Non-Goals
 
@@ -41,7 +58,8 @@ This proposal consists of three steps to move [cilium/cilium-cli] code into
 ### 1. Move [cilium/cilium-cli] code to [cilium/cilium] under `cli/` directory
 
 I'm assuming that you want to preserve the Git history of [cilium/cilium-cli]. See
-[michi-covalent/cilium] on how the code migration might look like.
+[michi-covalent/cilium] on how the code migration might look like. Squashing
+these commits into a single commit is another option.
 
 ### 2. Make [cilium/cilium-cli] code a part of `github.com/cilium/cilium` Go module
 
@@ -51,23 +69,19 @@ removing `cli/go.mod`. This allows [cilium/cilium-cli] code to depend on
 
 This is **not** to suggest `cilium-cli` to be tied to a specific `cilium`
 version. The goal of this proposal is to make it easy for contributors to add
-tests against the latest Cilium code. We'll continue to maintain the backward
+tests against the latest Cilium code. Continue to maintain the backward
 compatibility of `cilium-cli` with respect to `cilium` versions.
 
 ### 3. Release `cilium-cli` from [cilium/cilium-cli] repository
 
-We do not need to change the release process / cadence to accomplish the goals
-defined in this CFP. Continue releasing `cilium-cli` from [cilium/cilium-cli] at
-its own cadence using its own versioning that is independent of [cilium/cilium]
-versioning as you have been doing in [cilium/cilium-cli] repository.
+Set up an automated process to periodically sync `cilium-cli` code under `cli/`
+directory back to [cilium/cilium-cli] repo, similar to how Kubernetes syncs some
+modules from [kubernetes/kubernetes staging directory] to module repos
+([apimachinery] for example). Continue releasing `cilium-cli` from
+[cilium/cilium-cli] at its own cadence using its own versioning.
 
-See [michi-covalent/cilium-cli] as an example of how [cilium/cilium-cli] repo
-might look like after the code migration. Basically it contains:
-
-- [`go.mod`](https://github.com/michi-covalent/cilium-cli/blob/865cac4f148ce88cd04d99f8ecfe61a0ae4f645f/go.mod)
-- A simple [`main.go`](https://github.com/michi-covalent/cilium-cli/blob/865cac4f148ce88cd04d99f8ecfe61a0ae4f645f/main.go)
-  that calls [`NewCiliumCommand`](https://github.com/cilium/cilium-cli/blob/44ae1874fae4544c0db34dac89c11e37365b76ef/cli/cmd.go#L27)
-- Release [tags](https://github.com/cilium/cilium-cli/tags) and [artifacts](https://github.com/cilium/cilium-cli/releases)
+See [Tobias' comment](https://github.com/cilium/design-cfps/pull/9#discussion_r1211996796)
+for more details.
 
 ## Impacts / Key Questions
 
@@ -79,26 +93,25 @@ branches since these stable branches use their own copy of `cli/` to run
 `cilium connectivity test`. Apply the same [backporting process] as the rest of
 the Cilium codebase.
 
-### Impact: Additional overhead for cilium-cli development
+### Key Question: How do you run CI for CLI? More specifically, how do you ensure that changes to Cilium CLI remain compatible with older released versions of Cilium?
 
-### Impact: Module name change
+Here is the list of GitHub workflows that currently run for each pull requests in [cilium/cilium-cli]
+using the latest version of Cilium:
 
-This proposal impacts users who depend on [cilium/cilium-cli] as a library.
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/aks-byocni.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/eks-tunnel.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/eks.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/externalworkloads.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/gke.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/kind.yaml
+- https://github.com/cilium/cilium-cli/blob/main/.github/workflows/multicluster.yaml
 
-- The module path needs to be updated from `github.com/cilium/cilium-cli` to
-  `github.com/cilium/cilium/cli`.
-- Instead of depending on a version of `github.com/cilium/cilium-cli` (`v0.14.5`
-  for example), you need to inspect `go.mod` of a specific `github.com/cilium/cilium-cli`
-  version, and transitively find the `github.com/cilium/cilium/cli` version to
-  depend on.
-
-### Key Question: Do we lose any test coverage?
-
-### Key Question: How do we run CI for CLI? More specifically, how do we ensure that changes to Cilium CLI remain compatible with older released versions of Cilium?
-
-### Key Question: Where do we store the release artifacts? Will the cilium/cilium repository release page contain both CNI and CLI releases? Or do we keep cilium-cli for CLI releases?
-
-## Alternatives to Consider
+[cilium/cilium] has a similar coverage using CI images instead of released images,
+so it's probably an overkill to port all of these workflows to [cilium/cilium]. My
+proposal is to move https://github.com/cilium/cilium-cli/blob/main/.github/workflows/kind.yaml
+to [cilium/cilium], and run this workflow for pull requests that modify files
+under `cli/` directory. This ensures that any changes under `cli/` directory get
+tested against a released version of Cilium.
 
 [sig-cilium-cli]: https://github.com/orgs/cilium/teams/sig-cilium-cli
 [cilium/cilium]: https://github.com/cilium/cilium
@@ -106,3 +119,5 @@ This proposal impacts users who depend on [cilium/cilium-cli] as a library.
 [michi-covalent/cilium]: https://github.com/michi-covalent/cilium/pull/169
 [michi-covalent/cilium-cli]: https://github.com/michi-covalent/cilium-cli/tree/cli-test
 [backporting process]: https://docs.cilium.io/en/stable/contributing/release/backports/
+[kubernetes/kubernetes staging directory]: https://github.com/kubernetes/kubernetes/tree/master/staging/
+[apimachinery]: https://github.com/kubernetes/apimachinery
