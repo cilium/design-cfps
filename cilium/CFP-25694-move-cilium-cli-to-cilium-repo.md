@@ -74,14 +74,18 @@ compatibility of `cilium-cli` with respect to `cilium` versions.
 
 ### 3. Release `cilium-cli` from [cilium/cilium-cli] repository
 
-Set up an automated process to periodically sync `cilium-cli` code under `cli/`
-directory back to [cilium/cilium-cli] repo, similar to how Kubernetes syncs some
-modules from [kubernetes/kubernetes staging directory] to module repos
-([apimachinery] for example). Continue releasing `cilium-cli` from
-[cilium/cilium-cli] at its own cadence using its own versioning.
+We do not need to change the release process / cadence to accomplish the goals
+defined in this CFP. Continue releasing `cilium-cli` from [cilium/cilium-cli] at
+its own cadence using its own versioning that is independent of [cilium/cilium]
+versioning as you have been doing in [cilium/cilium-cli] repository.
 
-See [Tobias' comment](https://github.com/cilium/design-cfps/pull/9#discussion_r1211996796)
-for more details.
+See [michi-covalent/cilium-cli] as an example of how [cilium/cilium-cli] repo
+might look like after the code migration. Basically it contains:
+
+- [`go.mod`](https://github.com/michi-covalent/cilium-cli/blob/865cac4f148ce88cd04d99f8ecfe61a0ae4f645f/go.mod)
+- A simple [`main.go`](https://github.com/michi-covalent/cilium-cli/blob/865cac4f148ce88cd04d99f8ecfe61a0ae4f645f/main.go)
+  that calls [`NewCiliumCommand`](https://github.com/cilium/cilium-cli/blob/44ae1874fae4544c0db34dac89c11e37365b76ef/cli/cmd.go#L27)
+- Release [tags](https://github.com/cilium/cilium-cli/tags) and [artifacts](https://github.com/cilium/cilium-cli/releases)
 
 ## Impacts / Key Questions
 
@@ -92,6 +96,24 @@ Starting in `v1.15`, you need to backport bug fixes related to
 branches since these stable branches use their own copy of `cli/` to run
 `cilium connectivity test`. Apply the same [backporting process] as the rest of
 the Cilium codebase.
+
+### Impact: Module name change
+
+This proposal impacts users who depend on [cilium/cilium-cli] as a library.
+
+- The module path needs to be updated from `github.com/cilium/cilium-cli` to
+  `github.com/cilium/cilium/cli`.
+- Instead of depending on a version of `github.com/cilium/cilium-cli` (`v0.14.5`
+  for example), you need to inspect `go.mod` of a specific `github.com/cilium/cilium-cli`
+  version, and transitively find the `github.com/cilium/cilium/cli` version to
+  depend on.
+- Alternatively, depend on a particular `github.com/cilium/cilium` version without
+  inspecting `go.mod` file in `github.com/cilium/cilium-cli`.
+
+If you must retain the Go module name, you need to copy the `cilium-cli` code
+back to [cilium/cilium-cli] repo and modify all the import paths back to
+`github.com/cilium/cilium-cli` for each release..
+See https://github.com/cilium/design-cfps/pull/9#discussion_r1211996796 for details.
 
 ### Key Question: How do you run CI for CLI? More specifically, how do you ensure that changes to Cilium CLI remain compatible with older released versions of Cilium?
 
