@@ -135,6 +135,27 @@ to [cilium/cilium], and run this workflow for pull requests that modify files
 under `cli/` directory. This ensures that any changes under `cli/` directory get
 tested against a released version of Cilium.
 
+## Alternative approach: Extend connectivity test from cilium/cilium repo
+
+Sebastian Wicki suggests another approach to extend `cilium connectivity test`
+command from [cilium/cilium] repo using cilium-cli's [Hook interface]. This
+approach involves two steps:
+
+### Step 1: Implement the Hook interface in cilium/cilium repo.
+
+See [this commit](https://github.com/cilium/cilium/commit/26526a1890de6e05ca58d37b5a2da5822a3f22f0)
+as an example for how to implement the [Hook interface]. This enables you to
+extend `cilium connectivity test` without having to migrate the entire [cilium/cilium-cli]
+code base into [cilium/cilium] repo. Then, build a local version of cilium-cli
+with the additional hook during the CI.
+
+### Step 2: Import the hook back in cilium/cilium-cli repo.
+
+Import the hook from the previous step in [cilium/cilium-cli] repo so that
+additional tests in [cilium/cilium] repo get included in upstream cilium-cli
+releases. See [this commit](https://github.com/cilium/cilium-cli/commit/7b474e61be358fb0b9f2cd6fd075ba843b5d78f5)
+as an example.
+
 [sig-cilium-cli]: https://github.com/orgs/cilium/teams/sig-cilium-cli
 [cilium/cilium]: https://github.com/cilium/cilium
 [cilium/cilium-cli]: https://github.com/cilium/cilium-cli
@@ -143,3 +164,4 @@ tested against a released version of Cilium.
 [backporting process]: https://docs.cilium.io/en/stable/contributing/release/backports/
 [kubernetes/kubernetes staging directory]: https://github.com/kubernetes/kubernetes/tree/master/staging/
 [apimachinery]: https://github.com/kubernetes/apimachinery
+[Hook interface]: https://github.com/cilium/cilium-cli/blob/4a6cb76243704f96dfc02ff312b57e4d0ced0d84/internal/cli/cmd/hooks.go#L13-L17
