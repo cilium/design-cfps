@@ -54,19 +54,123 @@ This is an example of what the config will look like; it's likely that extra fie
 
 #### Config items
 
-* `mesh-auth-mode`: needs to store what mesh auth mode should be used, if any. Probably `mtls-spiffe` or `disabled` to begin with.
-* SPIRE server config:
-  * SPIFFE trust domain (default `spiffe.cilium` so that it's not an actual domain name.)
-  * SPIFFE ID for the Agent (default `spiffe://spiffe.cilium/cilium-agent`)
-  * SPIFFE ID for the Operator (default `spiffe://spiffe.cilium/cilium-operator`)
-  * SPIRE server location (default `spire-server.spire.svc.cluster.local`) The SPIRE server must be network accessible for attestation to work properly,
-    and for the operator to be able to register identities correctly.
-  * SPIRE Agent Admin socket location (default `unix://var/run/cilium/spiffe/admin/admin.sock`)
-  * SPIRE Agent socket location (default `unix://var/run/cilium/spiffe/agent.sock`)
-* `mesh-auth-port` (default `4250`) Configures the port that each agent opens for mutual authentication.
+##### Cilium Daemon Flags
 
-These will all need to be fit into the configuration and Helm charts somewhere, but the details are left to the implementers.
-This section will be updated once this is implemented.
+* `mesh-auth-enabled`: Should auth be enabled at all?
+* `mesh-auth-queue-size`: Sets the size of the queue for the auth manager.
+* `mesh-auth-gc-interval`: Sets the interval in which the mutual auth garbage collection process will run.
+
+
+##### Helm config
+
+This section shows the relevant configuration items from the the Helm `values.yaml`.
+
+The shown values are the defaults.
+
+```yaml
+authentication:
+  # -- Enable authentication processing and garbage collection.
+  # Note that if disabled, policy enforcement will still block requests that require authentication.
+  # But the resulting authentication requests for these requests will not be processed, therefore the requests not be allowed.
+  enabled: true
+  # -- Buffer size of the channel Cilium uses to receive authentication events from the signal map.
+  queueSize: 1024
+  # -- Buffer size of the channel Cilium uses to receive certificate expiration events from auth handlers.
+  rotatedIdentitiesQueueSize: 1024
+    # -- Interval for garbage collection of auth map entries.
+  gcInterval: "5m0s"
+  # Configuration for Cilium's service-to-service mutual authentication using TLS handshakes.
+  # Note that this is not full mTLS support without also enabling encryption of some form.
+  # Current encryption options are Wireguard or IPSec, configured in encryption block above.
+  mutual:
+    # -- Port on the agent where mutual authentication TLS handshakes between agents will be performed
+    port: 4250
+    # Settings for SPIRE
+    spire:
+      # -- Enable SPIRE integration (beta)
+      enabled: false
+      # Settings to control the SPIRE installation and configuration
+      install:
+        # -- Enable SPIRE installation.
+        # This will only take effect only if authentication.mutual.spire.enabled is true
+        enabled: true
+        # -- SPIRE namespace to install into
+        namespace: cilium-spire
+        # SPIRE agent configuration
+        agent:
+          # -- SPIRE agent image
+          image: ghcr.io/spiffe/spire-agent:1.6.3@sha256:8eef9857bf223181ecef10d9bbcd2f7838f3689e9bd2445bede35066a732e823
+          # -- SPIRE agent service account
+          serviceAccount:
+            create: true
+            name: spire-agent
+          # -- SPIRE agent annotations
+          annotations: { }
+          # -- SPIRE agent labels
+          labels: { }
+          # -- SPIRE Workload Attestor kubelet verification.
+          skipKubeletVerification: true
+        server:
+          # -- SPIRE server image
+          image: ghcr.io/spiffe/spire-server:1.6.3@sha256:f4bc49fb0bd1d817a6c46204cc7ce943c73fb0a5496a78e0e4dc20c9a816ad7f
+          # -- SPIRE server service account
+          serviceAccount:
+            create: true
+            name: spire-server
+          # -- SPIRE server init containers
+          initContainers: []
+          # -- SPIRE server annotations
+          annotations: {}
+          # -- SPIRE server labels
+          labels: {}
+          # SPIRE server service configuration
+          service:
+            # -- Service type for the SPIRE server service
+            type: ClusterIP
+            # -- Annotations to be added to the SPIRE server service
+            annotations: {}
+            # -- Labels to be added to the SPIRE server service
+            labels: {}
+          # SPIRE server datastorage configuration
+          dataStorage:
+            # -- Enable SPIRE server data storage
+            enabled: true
+            # -- Size of the SPIRE server data storage
+            size: 1Gi
+            # -- Access mode of the SPIRE server data storage
+            accessMode: ReadWriteOnce
+            # -- StorageClass of the SPIRE server data storage
+            storageClass: null
+          # SPIRE CA configuration
+          ca:
+            # -- SPIRE CA key type
+            # AWS requires the use of RSA. EC cryptography is not supported
+            keyType: "rsa-4096"
+            # -- SPIRE CA Subject
+            subject:
+              country: "US"
+              organization: "SPIRE"
+              commonName: "Cilium SPIRE CA"
+      # -- SPIRE server address used by Cilium Operator
+      #
+      # If k8s Service DNS along with port number is used (e.g. <service-name>.<namespace>.svc(.*):<port-number> format),
+      # Cilium Operator will resolve its address by looking up the clusterIP from Service resource.
+      #
+      # Example values: 10.0.0.1:8081, spire-server.cilium-spire.svc:8081
+      # Note that the default here is spire-server.cilium-spire.svc:8081, it is generated
+      # from the other settings in this file.
+      serverAddress: ~
+      # -- SPIFFE trust domain to use for fetching certificates
+      trustDomain: spiffe.cilium
+      # -- SPIRE socket path where the SPIRE delegated api agent is listening
+      adminSocketPath: /run/spire/sockets/admin.sock
+      # -- SPIRE socket path where the SPIRE workload agent is listening.
+      # Applies to both the Cilium Agent and Operator
+      agentSocketPath: /run/spire/sockets/agent/agent.sock
+      # -- SPIRE connection timeout
+      connectionTimeout: 30s
+```
+
 
 #### CRD - CiliumNetworkPolicy, CiliumClusterwideNetworkPolicy
 
@@ -86,7 +190,7 @@ spec:
     - matchLabels:
         run: sshd
     auth:
-       type: spiffe
+       mode: required
 ```
 
 * Semantics are:
@@ -105,7 +209,6 @@ spec:
 * Gotchas / corner cases:
   * Avoid requiring auth to kube-apiserver
   * Avoid requiring auth to SPIRE
-  * Many more, still TBD, [#24552](https://github.com/cilium/cilium/issues/24552) is logged to investigate, and this document will be updated further once that work is done.
 
 
 ### mTLS, SPIFFE, and SPIRE
@@ -128,6 +231,8 @@ Cons:
 ##### cert-manager CSI driver
 
 cert-manager has a SPIFFE-capable CSI plugin that makes SVIDs, including the X.509 TLS keypair, available as a dynamically-mounted Secret inside Kubernetes Pods. Because we don’t want the Pods to need to mount things for mTLS, this is not viable, unfortunately.
+
+It is possible for cert-manager support to be built at a later date, interacting with the Cilium agent as the SPIRE server does, but it requires more time spent designing the chain of trust, attestation process, and how the trust root management works; in SPIRE and SPIFFE, this is all handled already.
 
 ##### Istio
 
@@ -168,7 +273,7 @@ This is a diagram of how it works in the normal case.
 
 #### SPIFFE, SPIRE, and the cilium-agent 
 
-So, in the usual flow for SPIRE, the workload requests its own information from the SPIRE server. But for Cilium Service Mesh, we want this mTLS interaction to be both seamless and transparent for the user. On top of that, we’re not even going to be using the TLS keypairs for actual encryption, just for mutual authentication. So, we need a way for a Cilium Security Identity to correspond one-to-one with a SPIFFE identity, for that identity to be registered with a SPIRE server, and then for the cilium-agent to be able to retrieve the identity’s keypair so that it can do a handshake to perform the actual authentication.
+In the usual flow for SPIRE, the workload requests its own information from the SPIRE server. But for Cilium Service Mesh, we want this mTLS interaction to be both seamless and transparent for the user. On top of that, we’re not initially going to be using the TLS keypairs for actual encryption, just for mutual authentication. So, we need a way for a Cilium Security Identity to correspond one-to-one with a SPIFFE identity, for that identity to be registered with a SPIRE server, and then for the cilium-agent to be able to retrieve the identity’s keypair so that it can do a handshake to perform the actual authentication.
 
 Luckily, we have something that already has all the information it needs for all of those things - the cilium-agent itself. And also luckily, when some other folk worked on ideas about integrating SPIFFE into Cilium earlier, they also did a bunch of work with SPIFFE and SPIRE to create a Delegated Identity API and implemented it in the SPIRE server. What this means is that we can give all the Cilium agents a common SPIFFE identity, register that identity with the SPIRE server, and then grant those identities the permission to be delegates and watch for identities on behalf of other workloads. Those identities will be sent to the Cilium Agent as soon as they are created on the SPIRE server, as long as the SPIFFE selectors (in our case, the label selectors) are in the set being watched by the Cilium Agent.
 
@@ -179,11 +284,11 @@ This diagram shows the way the API flows work. It’s assumed before we start th
 Then, when required (whether we do this at Endpoint creation or later is still TBD):
 1. All cilium-agents running a workload mentioned in an auth-enabled policy connect to their local spire-agent, and watch a set of SPIFFE labels that includes the labels for the relevant SVID. The cilium-agent identity is allowed to do Delegated Identity requests to the Workload API (WL API), so this is allowed.
 1. The spire-agent watches SVIDs on the SPIRE server, sees any updates to all relevant SVIDs, and passes them back to the cilium-agent.
-1. The cilium-agent then figures out where the request is coming from, and connects to the cilium-agent on the source node to perform the mTLS handshake. Because this  a mutual TLS, if it succeeds, then the workloads are authenticated.
+1. The cilium-agent then figures out where the request is coming from, and connects to the cilium-agent on the other node to perform the mTLS handshake. Because this is a mutual TLS handshake, if it succeeds, then the workloads are authenticated.
 The destination node will also record that the workload is authenticated for reverse traffic.
-1. The mTLS handlers in each cilium-agent then pass the auth success to their local dataplane, by telling it that identity A is authenticated to identity B for some period of time (the lifetime of the certificates in the mTLS handshake).
+1. The mTLS handlers in each cilium-agent then pass the auth success to their local dataplane, by telling it that identity A is authenticated to identity B for some period of time (the shortest lifetime of the certificates in the mTLS handshake).
 The mTLS handlers will also need to indicate the remote node, along with the auth type.
-For that lifetime, traffic between Identity A and Identity B will flow without further checks.
+For that lifetime, traffic between Identity A and Identity B will flow without further authentication checks. Other Policy checks are performed as always.
 
 #### SPIFFE installation steps and flow
 
@@ -193,7 +298,7 @@ For that lifetime, traffic between Identity A and Identity B will flow without f
     * Per-node SPIRE Agent must be installed in the cluster and configured correctly. The SPIRE agent talks to the SPIRE server over the network, but all other communication with the Cilium Agent is via domain sockets shared on the host's filesystem.
     * Cilium Agent SPIFFE Identity must be created as per SPIRE Agent config.
     * Cilium Operator SPIFFE Identity must be created as per SPIRE Server config.
-    * (This document will be updated after [#23806](https://github.com/cilium/cilium/issues/23806) is done.)
+    * Cilium Operator SPIFFE Identity is granted privileges to manage SPIRE Server entries across the network. This enables the corresponding SVIDs (and keypairs) to be distributed via the SPIRE system.
 1. Cilium agent starts up as normal, acts as CNI.
 1. Cilium agent also contacts the local SPIRE agent at startup (via a domain socket shared on the host's filesystem) to watch the Delegated Identity API and gets its own SPIFFE identity via the SPIRE workload API.
 1. When generating Cilium Security Identities for identities with mTLS auth enabled, Cilium Operator in SPIFFE mode also records the SPIFFE identity (that is, the string `spiffe://spiffe.cilium/identity/1337`).
@@ -208,7 +313,7 @@ It's not possible to reuse an identity-identity handshake across nodes without m
 
 #### Connections
 
-##### Between Cilium Operator instances and the SPIFFE server
+##### Between Cilium Operator instances and the SPIRE server
 
 SPIFFE identity registration must occur out-of-band from when the actual SPIFFE identity usage is made via the workload API. In order to register the SPIFFE identities, the Cilium Operator must communicate with the SPIRE server.
 
@@ -216,7 +321,7 @@ There are two ways to do this:
 1. To communicate with the SPIRE server using its admin domain socket, which could be mounted into the host file system as we do with the Agent admin socket. However, this means that _one_ Pod out of the Operator deployment would need to be running on the _same node_ as the SPIRE Server's StatefulSet Pod. This will need Pod Affinity, and some way for the Operator to check if the domain socket is available. This process would also need to run independently of the usual Kubernetes Leadership, unfortunately.
 2. As part of the installation, we configure a special SPIFFE ID that we will grant to the Cilium Operator and give it admin-level access to the SPIRE server. This will allow the Operator to manage SPIRE entries across the network safely (as it will use SPIFFE identities and SPIRE attestation to ensure that only the Operator gets to do it.)
 
-
+For this design, we've chosen to use option 2 - the Operator's SPIFFE ID is granted privileges to create and delete SPIRE entries in the SPIRE server across the network. SPIRE's attestation process makes impersonating the Cilium Operator very difficult (see the official SPIRE docs for more reasons why this is.)
 ##### Between Cilium Agent instance peers
 Mutual authentication connections are established between the node IPs themselves. However, the peers that require authentication will not be these nodes.
 
@@ -261,15 +366,31 @@ This process will be skipped if the `mesh-auth-mode` config directive is not set
 * Update datapath to inform it that this peer is authenticated (see Data Plane for details)
 * The destination node is responsible for checking that a Pod matching the destination Identity is running on itself, and only allowing the authentication to succeed if it is.
 
+##### Node deletion
+
+* When a node is deleted, entries in other node's auth tables associated with it are deleted also.
+
 ##### Endpoint deletion
 
-* Node with endpoint must clear out Auth table to remove any state that implies authentication occurred for connections with this endpoint
-* Do all other nodes need to clear out their corresponding state also?
-  * Thinking of IP recycling case, e.g. in ENI mode an IP could move from one node to another.
-  * Trigger on CiliumEndpoint deletion even for CiliumEndpoints on remote nodes, delete authentication state corresponding to that peer. Including userspace authentication table entries, datapath CT/map entries.
+When an endpoint is deleted, a garbage collection is triggered that will remove auth table entries
+for deleted endpoints.
+
+When the last local endpoint of a security identity is removed, the agent will
+perform a garbage collection and remove all auth entries associated with that
+identity.
+
+##### Identity deletion
+
+* When a CiliumIdentity entries in each node's auth tables associated with it are deleted.
 
 ##### Garbage collection
-* Do we need periodic garbage collection, e.g. of authenticated sessions? Because the auth table has an expiry time, we have built-in garbage collection, in that the auth table entry will stop working when the shortest lifetime certificate in the A-B pair expires. The userspace will be responsible for pruning expired auth table entries if the identity has been deleted and the certificate validity period has passed.
+
+The mutual auth system also runs a periodic garbage collection that:
+* removes expired auth map entries
+* At least one Policy requesting auth for the entry exists. If not, the entry will be removed.
+
+Other periodic garbage collection may be added over time.
+
 
 #### Certificate management
 
@@ -281,18 +402,17 @@ Initial certificate management for this feature will be using SPIRE and SPIFFE, 
 #### Structures
 - Policy Entry - 1 bit: "Authentication Required"
 - Drop events - 1 codepoint - "Authentication Required"
-- Auth table - a BPF table needs to be added that records, at least:
+- Auth table - a BPF table has been added that records:
   * Local Identity
   * Remote Identity
   * Remote Node ID
   * Authentication Type
   * Authentication expiry time
 
-Further details of this table will be worked out as part of the implementation.
 
 #### Logic
 When performing policy lookup, check 'authentication required'.
-If this bit is set and there is no corresponding entry in the BPF auth table, drop the traffic and emit an 'authentication required' event to the local control plane.
+If this bit is set and there is no corresponding entry in the BPF auth table, drop the traffic and emit an 'authentication required' event to the local control plane via the Signal map.
 Ensure both egress and ingress implement this logic.
 
 #### Proxy
