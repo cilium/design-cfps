@@ -25,8 +25,12 @@ requires a feedback loop) and routing to endpoints outside of the cluster.
 
 ## Goals
 
-* Describe how an xDS adapter could work in Cilium
-* Highlight new capabilities that xDS could enable
+* Introduce a new xDS adapter to Cilium covering ClusterIP routing capabilities.
+* Develop shared interface between Cilium and Kubernetes, KVStore, and xDS as
+  data sources.
+* Provide room for future growth in xDS support beyond ClusterIP routing.
+* Allow the use of any combination of independent data sources (Kubernetes,
+  KVStore, xDS) with Cilium.
 
 ## Non-Goals
 
@@ -57,7 +61,7 @@ cases:
 
 Although it is out of scope for this specific CFP to provide complete solutions
 for either of these use cases, it will demonstrate the benefits of having an
-xDS adapter when developing a solution either of these use cases.
+xDS adapter when developing a solution for either of these use cases.
 
 ### Use Cases
 
@@ -110,28 +114,33 @@ more efficient alternative to either of the approaches commonly used today.
 
 ## Proposal
 
-### Logic
+This work will be divided into several phases. Splitting this work into phases
+will enable us to focus on smaller deliverables that each independently provide
+value to the project.
 
-The introduction of this adapter would mean that Cilium could accept endpoints
-from more than one source. Cilium could be configured to read exclusively from
-Kubernetes (default), xDS, or both, depending on the use case.
+### 1. Common Interface for Data Sources
+Before we get started on an xDS adapter for Cilium, we'll need to build a common
+interface for interacting with data sources (Kubernetes, KVStore, and xDS). This
+interface will enable the majority of the codebase to be entirely unaware of
+which data sources are in use.
 
-When both data sources were in use, precedence in any conflicts would be given
-to data received directly from Kubernetes. As a concrete example, it's possible
-that the same Service could be represented in both Kubernetes and xDS. If that
-were the case, we'd give precedence to the Service from Kubernetes APIs and drop
-the one from xDS, likely surfacing some kind of warning along the way.
+A key part of defining this interface will involve determining a precedence
+order when more than one data source is connected. When any conflicts occur,
+for example if Services from different sources have the same IP, the following
+order will be used for precedence:
 
-### Architecture
+1. Kubernetes
+2. KVStore
+3. xDS
 
-This xDS adapter would be similar conceptually to KVStore. Essentially this
-would be another backend that Cilium could get data from. Similar to how Cilium
-can read from Kubernetes APIs and/or KVStore today, we would add a third option
-for xDS as a data source, and develop a shared interface that worked across all
-data sources.
+If there is interest, we may make this order configurable in a future
+enhancement.
 
-### API Mapping
+### 2. New xDS Adapter
+In this phase we'll develop a new xDS adapter that implements the interface
+developed in the first phase.
 
+#### API Mapping
 To keep the initial work as focused as possible, I propose using existing xDS
 APIs to model ClusterIP routing. In the future, we may want to consider either
 additions to those existing xDS APIs or new xDS APIs to cover the entirety of
@@ -161,44 +170,44 @@ for ClusterIP routing:
 | Name | `cluster.metadata.service_name` | |
 | Namespace | `cluster.metadata.service_namespace` | |
 
+### 3. Sample xDS Control Plane
+It would be useful for both the overall OSS experience and e2e testing to have
+an OSS xDS Control Plane that could serve as a reference xDS control plane
+implementation with Cilium. Of course there will likely be multiple options
+here, but it will be helpful to have at least a reference implementation for the
+purposes of e2e testing.
+
+### 4. Report Metrics via LRS
+One of the significant benefits of xDS is that it contains a load reporting
+mechanism. This can enable advanced routing capabilities at the xDS control
+plane layer, such as the topology aware routing example mentioned above. Within
+Cilium we'd likely want to report new and active connections to an xDS control
+plane via LRS.
+
 ## Impacts / Key Questions
 
-_List crucial impacts and key questions. They likely require discussion and are required to understand the trade-offs of the CFP. During the lifecycle of a CFP, discussion on design aspects can be moved into this section. After reading through this section, it should be possible to understand any potentially negative or controversial impact of this CFP. It should also be possible to derive the key design questions: X vs Y._
-
-### Impact: ... 1
-
-_Describe crucial impacts and key questions that likely require discussion and debate._
-
-### Key Question: ... 2
-
-_Describe a key question_
-
-### Option 1:
+### Key Question: Should we use a custom API on top of xDS-TP instead?
+Instead of building on top of existing xDS APIs, we could use a custom API on
+top of xDS-TP (xDS Transport Protocol). This would follow the pattern that
+Istio's Ztunnel project used when they developed
+[WDS](https://github.com/istio/ztunnel/blob/db0a74212c42c66b611a71a9613afb501074e257/proto/workload.proto).
+We could also just choose to send Cilium-specific protos over the wire.
 
 #### Pros
-
-* ...
-
-#### Cons
-
-* ...
-
-### Option 2:
-
-#### Pros
-
-* ...
+* Very flexible, can specify ~anything
+* Resulting API would likely be very focused on Cilium
 
 #### Cons
+* Existing xDS APIs already cover a large portion of Cilium functionality,
+  especially ClusterIP routing
+* Unlikely to be portable across different data planes or control planes - it
+  would be unlikely to work with any existing xDS control planes
+* Building consensus around new APIs is a non-trivial effort
+* We can add new features and capabilities to existing xDS APIs, we don't need
+  to reinvent the wheel
 
-* ...
-
-## Future Milestones
-
-_List things that this CFP will enable but that are out of scope for now. This can help understand the greater impact of a proposal without requiring to extend the scope of a CFP unnecessarily._
-
-### Deferred Milestone 1
-
-_Description of deferred milestone_
-
-### Deferred Milestone 2
+Although it's certainly possible that we may run into a point where we want to
+augment existing xDS APIs with custom extensions or move to an entirely custom
+set of xDS APIs, that does not seem like a prudent starting point. Instead we
+recommend taking advantage of the broad intersection between existing xDS APIs
+and existing Cilium features.
