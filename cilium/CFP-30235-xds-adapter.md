@@ -2,7 +2,7 @@
 
 **SIG:** Agent
 
-**Begin Design Discussion:** 2023-01-03
+**Begin Design Discussion:** 2024-01-03
 
 **Cilium Release:** 1.16
 
@@ -11,11 +11,12 @@
 ## Summary
 
 Add a new xDS adapter in Cilium that could take advantage of some of the
-strengths of xDS, particularly the feedback loop via LRS and the overall
-potential for scalability improvements when adjustments to routing
-configurations don't need to round trip through the Kubernetes API Server.
-This adapter would be an alternative source of endpoints and would not replace
-the existing default behavior of reading directly from Kubernetes APIs.
+strengths of xDS, particularly the feedback loop via [Load Reporting Service
+(LRS)](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_reporting_service)
+and the overall potential for scalability improvements when adjustments to
+routing configurations don't need to round trip through the Kubernetes API
+Server. This adapter would be an alternative source of endpoints and would not
+replace the existing default behavior of reading directly from Kubernetes APIs.
 
 ## Motivation
 
@@ -53,15 +54,16 @@ to [cncf/xds](https://github.com/cncf/xds) repo as part of that overall vision.
 In parallel to these efforts by the xDS community, GKE is planning to introduce
 xDS as an additional data source for DPv2 configuration. This feels sufficiently
 generic and helpful that it could be something that could be contributed to
-upstream Cilium. This could be particularly useful for at least two common use
+upstream Cilium. This could be particularly useful for at least three common use
 cases:
 
 1. Supporting Services and Endpoints from outside of the local cluster.
 1. Supporting advanced routing techniques, such as topology aware routing.
+1. Using load information obtained via bidirectional xDS to steer traffic.
 
 Although it is out of scope for this specific CFP to provide complete solutions
 for either of these use cases, it will demonstrate the benefits of having an
-xDS adapter when developing a solution for either of these use cases.
+xDS adapter when developing a solution for any of these use cases.
 
 ### Use Cases
 
@@ -129,9 +131,10 @@ order when more than one data source is connected. When any conflicts occur,
 for example if Services from different sources have the same IP, the following
 order will be used for precedence:
 
-1. Kubernetes
-2. KVStore
-3. xDS
+1. Local API
+2. Kubernetes
+3. KVStore
+4. xDS
 
 If there is interest, we may make this order configurable in a future
 enhancement.
@@ -191,10 +194,13 @@ Instead of building on top of existing xDS APIs, we could use a custom API on
 top of xDS-TP (xDS Transport Protocol). This would follow the pattern that
 Istio's Ztunnel project used when they developed
 [WDS](https://github.com/istio/ztunnel/blob/db0a74212c42c66b611a71a9613afb501074e257/proto/workload.proto).
-We could also just choose to send Cilium-specific protos over the wire.
+We could also just choose to send Cilium-specific protos over the wire. For
+example, we could use Cilium agent API JSON types encoded using the proto Struct
+type, such that the adapter would be responsible for unmarshalling it to the
+Cilium API Go types (via JSON).
 
 #### Pros
-* Very flexible, can specify ~anything
+* Very flexible and extensible, can specify or add ~anything
 * Resulting API would likely be very focused on Cilium
 
 #### Cons
