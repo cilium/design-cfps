@@ -20,7 +20,7 @@ Cilium's current mutual authentication support is designed with the goal of bein
 
 It does this by splitting mutual authentication and encryption (the two fundamentals of mutual TLS) into two separate channels.
 
-From the CFP(link):
+From the [CFP](https://github.com/cilium/design-cfps/blob/main/cilium/CFP-22215-mutual-auth-for-service-mesh.md):
 > Firstly, a control plane connection between cilium-agent instances on each node provides authentication of connections between pods on the nodes.
 > Secondly, the existing Cilium encryption support using WireGuard or IPsec provides an encrypted dataplane for the connections.
 
@@ -76,19 +76,27 @@ Those circumstances are:
 - _Some_ nodes in the cluster must lose connection to the apiserver somehow. In one demonstration, this was performed using iptables rules on a host, which would require elevated privileges, but it's also possible, if unlikely, that this situation would arise in some other network failure scenarios.
 - An attacker must be able to launch new pods on one of the nodes while the above two conditions hold.
 
-Then, as Thomas Graf laid out [in the Cilium Slack](https://cilium.slack.com/archives/C02QKQDTVDX/p1701466203218329?thread_ts=1701466174.930209&cid=C02QKQDTVDX)
+Then, the following steps must occur:
 
-* Attacker has to identify a source / destination pod pair
-* Attacker has to cut apiserver access of the destination node or otherwise delay any updates from the apiserver to that node for a prolonged time while the source node remains connected to the apiserver. The entire apiserver not being available is not enough as no pods could be deleted or scheduled (next step)
-* Attacker has to be able to delete the source pod so it releases it’s IP. Otherwise attacker has to wait for the pods to scale down by the autoscaler or some other reason and has to identify IPs which have been released. All of this has to happen while the destination node remains detached from the apiserver.
-* Attacker must have access to the IPAM pool (when in use) of the original source pod
-* Attacker has to be able to schedule enough pods to re-use the released pod IP before anyone else does. If any pods get scheduled by other users in parallel, any other new pod may pick up the IP. All of this needs to happen while the destination node continues to remain without access to the apiserver.
-* In non trivial clusters using per node PodCIDRs, attacker typically needs to be able to use a nodeSelector to avoid spreading pods on arbitrary nodes with different PodCIDRs.
-* No egress policies deny policies affecting the scheduled source pod may exist
-* As soon as the destination node regains apiserver access, any ongoing, incorrectly allowed packet flow gets dropped even for established connections.
+* Attacker must delete a pod on a connected node (the source node)
+* Attacker must schedule a pod on that connected node that ends up with the same IP address as an already existing Pod, that had an already authenticated mutual auth session established with a disconnected node (the destination node)
+* The network policy used to enforce traffic must be an _ingress_ policy, which is enforced on the _destination_ node. For _egress_ policies, the attack must be reversed, with the _destination_ node remaining connected and the _source_ node being disconnected. In this case, scheduling another Pod to reuse the same IP address is more complex, since Kubernetes can't be used to achieve it.
 
+In more detail the steps are:
+* Attacker has to identify a source / destination pod pair where the destination pod is protected by an ingress policy that enables mutual auth.
+* There must already have been a connection between the source and destination pod pair to establish a mutual auth session in the mutual auth BPF table.
+* Attacker has to cut apiserver access of the destination node or otherwise delay any updates from the apiserver to that node for a prolonged time while the source node remains connected to the apiserver. In most cases, the entire apiserver not being available is not enough as no pods could be deleted or scheduled (next step).
+* Attacker has to be able to delete the source pod so it releases it’s IP. Otherwise attacker has to wait for the pods to scale down by the autoscaler or some other reason and has to identify IPs which have been released. All of this has to happen while the destination node remains detached from the apiserver, or else the destination node will see pod deletion updates and update its cache.
+* Attacker must be able to schedule a pod that will end up with the same IP address as the source pod.
+* Attacker has to be able to schedule a pod and be lucky enough for it to get assigned the same IP address as the original source pod. The chances of this depends on factors like the size of the IP address pool, and how many other pods are being scheduled at this time.
+* No egress policies policies affecting the scheduled source pod may exist.
 
 However, if _all_ of those steps happen, then the cache manipulation involved will render it possible to spoof the mutual authentication process and allow unauthenticated pods to send traffic that the system will treat as though it's authenticated.
+
+This condition will last only until one of the following occurs:
+
+* The destination node regains connection to the apiserver and processes pod deletion events. This will update the cache to be in the correct state, and the mutual auth table will be updated to remove entries associated with identities with no running endpoints on a node.
+* One of the certificates involved in the handshake expires. When this occurs, another mutual auth handshake will occur, which also checks the pods running on the node. The default lifetime for a certificate is 30 minutes, so that is the maximum window of exposure to this attack.
 
 Let's walk through some diagrams of this attack.
 
@@ -121,6 +129,8 @@ However, in the existing mode, mutual authentication handshakes are only initiat
 Adding a connection-based mutual authentication mode significantly reduces the timescale that an attack is exploitable for - since the mutual auth handshake is performed on each new connection, and connections _generally_ last much less that 30 minutes.
 
 It also makes performing the exploit harder, since the full 5-tuple (source IP, source port, destination IP, destination port, protocol) must match, rather than just source and destination IP, _and_ must also migrate the actual connection from one application to another. Still possible, but orders of magnitude harder.
+
+Additionally, the eBPF conntrack table already handles new three-way handshakes on existing entries by clearing and resetting connection properties, so as long as this code also handles clearing mutual auth related config, then it will make it even more difficult to reuse an existing connecton entry.
 
 ## Goals
 
