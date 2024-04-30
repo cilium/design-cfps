@@ -27,6 +27,10 @@ needs when creating a proposal. When are you ready to submit your CFP please:
 1. Create a CFP issue in the repo your design applies to if you haven't already
 2. Create the file in this repo, with a path of `<repo>/CFP-###-subject.md` where the number is the CFP issue number
 
+For example, if your issue is filed in https://github.com/cilium/hubble with
+the issue number 000, and the subject of that CFP is to "Change foo to bar",
+the path would be `hubble/CFP-000-change-foo-to-bar.md`.
+
 Many design docs also begin their life as a Google doc or other shareable
 file for easy commenting and editing when still in the early stages of discussion.
 Once your proposal is done, submit it as a PR to the design-cfps folder.
