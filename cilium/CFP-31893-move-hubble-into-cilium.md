@@ -1,4 +1,4 @@
-# CFP-033: Move `cilium/hubble` into `cilium/cilium`
+# CFP-31893: Move `cilium/hubble` into `cilium/cilium`
 
 **SIG: `@cilium/sig-hubble`**
 
