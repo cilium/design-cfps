@@ -1,5 +1,7 @@
 This directory contains CFP design proposals for features impacting repos across the
-Cilium Github organization.
+Cilium Github organization. 
+
+All current CFPs are listed in the [Cilium Feature Proposals (CFPs) project]() found in this repository.
 
 # Purpose of CFPs
 
