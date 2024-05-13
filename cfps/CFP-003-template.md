@@ -1,6 +1,6 @@
 # CFP-003: Template
 
-**SIG: SIG-NAME**
+**SIG: SIG-NAME ([View all current SIGs](https://docs.cilium.io/en/stable/community/community/#all-sigs))**
 
 **Begin Design Discussion:** YYYY-MM-DD
 
