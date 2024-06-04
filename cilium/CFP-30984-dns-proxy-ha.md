@@ -12,7 +12,7 @@
 
 Cilium agent uses a proxy to intercept all DNS queries and obtain necessary information for enforcing toFQDN network policies. However, the lifecycle of this proxy is coupled with cilium agent. When an endpoint has a toFQDN network policy in place, cilium installs a redirect to capture all DNS traffic. So, when the agent is unavailable all DNS requests time out, including when DNS name to IP address mappings are already in place for this name.DNS policy unload on shutdown can be enabled on agent, but it works only when L7 policy is set to * and agent is shutdown gracefully.
 
-This CFP introduces a standalone DNS proxy that can be run alongside cilium agent which should eliminate the hard dependency on cilium agent atleast for names that are already resolved. 
+This CFP introduces a standalone DNS proxy that can be run alongside cilium agent which should eliminate hard dependency for names that already have policy map entries in place.
 
 ## Motivation
 
@@ -20,7 +20,7 @@ Users rely on toFQDN policies to enforce network policies against traffic to rem
 
 ## Goals
 
-* Introduce a streaming gRPC API for exchanging FQDN related policy information.
+* Introduce a streaming gRPC API for exchanging FQDN policy related information.
 * Introduce standalone DNS proxy (SDP) that binds on the same port as built-in proxy with SO_REUSEPORT and uses the above mentioned API to notify agent of new DNS resolutions.
 * Leverage the bpf maps to resolve IP address to endpoint ID and identity ID for enforcing L7 DNS policy.
 
@@ -35,7 +35,7 @@ Users rely on toFQDN policies to enforce network policies against traffic to rem
 ![Standalone DNS proxy Overview](./images/standalone-dns-proxy-overview.png)
 
 There are two parts to enforcing toFQDN network policy. L4 policy enforcement against IP adresses resolved from a FQDN and policy enforcement on DNS requests (L7 DNS policy). In order to enforce L4 policy, per endpoint policy bpf maps need to be updated. We'd like to avoid multiple processes writing entries to policy maps, so the standalone DNS proxy (SDP) needs a mechansim to notify agent of newly resolved FQDN <> IP address mappings. This CFP proposes exposing a new gRPC streaming API from cilium agent to do this. Since the connection is bi-directional, cilium agent can re-use the same connection to notify the SDP of L7 DNS policy changes.
-Additionally SDP also needs to translate IP address to endpoint ID and identity in order to enforce policy by reusing the logic from agent's DNS proxy. We propose to achieve this by reading this infomation directly from the bfp maps.
+Additionally SDP also needs to translate IP address to endpoint ID and identity ID in order to enforce policy. In this CFP, we discuss multiple options SDP could use to obtain these mappings.
 
 ### RPC Methods
 
@@ -90,14 +90,14 @@ message Result {
 ### Tracking policy updates to SDP instances
 
 Since SDP can be deployed out of band and users can choose to completely disable built-in proxy to run multiple instances of SDP, agent should be prepared to handle multiple instances. In order to ensure all instances  have upto date policy revisions, agent will maintain a mapping of ACKed policy revision numbers against stream ID.
-Since policy revision numbers from Cilium are reset when the local Cilium instance restarts, we need to unconditionally send the policy updates to the SDP instance on agent restart.
+Since policy revision numbers are reset when agent restarts, we need to unconditionally send policy updates to SDP on agent restart.
 
 ## Impacts / Key Questions
 
 
 ### Discovering endpoint metadata from SDP
 
-In order to enforce L7 DNS policy, SDP needs to translate IP address to endpoint ID and identity ID. The simplest option is to reuse the same gRPC stream and implement another method to get the mappings from cilium agent. Since the actual source of truth are the bpf maps. And SDP is expected to resolve the DNS queries even when agent is down, it is better to read the information directly from the bpf maps. We choose the bpf option as it is more reliable and does not rely on agent availability. It also aligns with having a HA DNS proxy.
+In order to enforce L7 DNS policy, SDP needs to translate IP address to endpoint ID and identity ID. The simplest option is to reuse the same gRPC stream and implement another method to get the mappings from cilium agent. However, the actual source of truth are the bpf maps and SDP is expected to resolve the DNS queries even when agent is down, so we could read the information directly from the bpf maps. We prefer the bpf option since it does not rely on agent availability.
 
 #### Option 1a: gRPC method
 
@@ -111,7 +111,7 @@ Get the endpoint ID and identity for a given IP address by making a gRPC call to
 ##### Cons
 
 * Reliance on gRPC call in the hot-path
-* Does not cache the data for endpoints that never had a DNS query.
+* Does not cache the data for endpoints that never made a DNS query.
 * In an event where SDP restarts when agent's gRPC service is unavailable, all cached state is lost and SDP cannot translate IP to endpoint ID or identity.
 
 #### Option 1b: Listen to ipcache updates via grpc
@@ -125,12 +125,12 @@ Similar to envoy, SDP can listen to ipcache updates and maintain a local cache o
 
 ##### Cons
 
-* Need a method for reconciling the cache in case of SDP restarts.
+* Need a mechanism for reconciling the cache in case of SDP restarts.
 * SDP will be aware of all the endpoints data, which might not be needed for DNS proxy.
 
-#### Option 2: Read from bpf maps [Recommended]
+#### Option 2: Read from bpf maps
 
-We will need to read from couple of bpf maps to get the endpoint ID and identity for a given IP address. For ip to endpoint ID, we can read from `cilium_lxc` and for ip to identity, we can read from `cilium_ipcache`.
+Read mappings from bpf maps `cilium_lxc` for endpoint ID and `cilium_ipcache` for identity.
 
 ##### Pros
 
@@ -142,28 +142,23 @@ We will need to read from couple of bpf maps to get the endpoint ID and identity
 
 * Low level interactions from components external to cilium agent.
 
-### Q: Why did we choose to read from bpf maps ?
-
-The reason we chose to read from bpf maps is because the DNS proxy should be able to resolve the DNS queries even when agent is down. The bpf maps are the source of truth for cilium agent and are updated in real time. So, reading from bpf maps ensures that the DNS proxy is always in sync with the cilium agent.
-Does envoy also read from bpf maps for identity resolution ? if so we can resuse the same mechanism.
-
 ### Flag to disable built-in proxy
 
-Adding a flag(`--disable-builtin-dns-proxy`) to cilium agent to disable the built in dns proxy allows standlone dns proxy to run its independent lifecycle. The current implmentation of cilium agent depends on the built-in dns proxy for restoring the endpoint for DNS rules. With the flag enabled we will need to decouple that dependency. Cilium agent can retrieve the DNS rules from in memory(as they have already been parsed from the file system).
+Adding a flag in cilium agent to disable built-in dns proxy allows for de-coupling of SDP's lifecycle from agent. The current implementation of cilium agent depends on the built-in dns proxy for restoring the endpoint for DNS rules. With the flag enabled we will need to refactor to remove that dependency. Cilium agent can retrieve the DNS rules from in memory policy representation (agent already parses this information from ep_config.json on startup).
 
 #### Pros
 
-* Allows cilium agent to be upgraded without breaking the DNS traffic.
-* Provides a freedom to allow any delegated dns proxy to be plugged in.
+* Allows for de-coupling upgrade cycles of SDP and cilium agent.
+* Allows any delegated DNS proxy to be plugged in.
 * Reduces the resource utilization in cilium agent.
 
 #### Cons
 
-* Higher latency in DNS resolution as the DNS queries are now handled by a separate process.
+* Higher latency in DNS resolution as the DNS queries are always handled by a separate process.
 
 ### Q: Restoring L7 DNS policy when agent is unavailable
 
-In an event where SDP restarts when agent's gRPC service is unavailable. SDP can read from the filesystem and restore the policy. The state is stored in `ep_config.json` file. So the flow would be first trying to connect to agent and if it fails, read from the file.
+In an event where SDP restarts when agent's gRPC service is unavailable, SDP can read state from `ep_config.json` and restore policy.
 
 ### Scenarios and Expected Behaviour
 
@@ -176,8 +171,8 @@ In an ideal scenario, both cilium agent and SDP should be interacting with each 
  
 #### Cilium Agent is running, SDP is down/restarting
 
-* In case Cilium Agent has the DNS proxy running as well, then DNS queries will be served.
-* Once SDP is starting up, it will connect to the agent and get the latest policy updates.
+* In case Cilium Agent has the DNS proxy running as well, then DNS queries will be served. If built-in proxy is disabled, SDP can also be configured to run with multiple replicas.
+* Once SDP is starts up, it will connect to the agent and get the latest policy updates.
 
 #### SDP Upgrade(Given Cilium Agent is Running)
 
