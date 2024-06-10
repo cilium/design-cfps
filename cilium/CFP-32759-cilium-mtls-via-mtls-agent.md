@@ -207,6 +207,17 @@ The mTLS agent will require a certificate per workload identity to establish mTL
 
 The current proof of concept relies on a pod IP to workload identity mapping for certificate lookup.
 
+### Observability
+
+The exact observability mechanisms are still to be determined, but users can expect to have the following logging insights into traffic flows utilizing Cilium mTLS (dependent on logging verbosity).
+
+- BPF logs indicating what traffic is being redirected to the mTLS agent on client and server nodes. Logs will indicate successful or unsuccessful redirection from the perspective of the kernel program
+- mTLS agent logs stating what traffic is being proxied and to what destination. Logs will also state successful certificate lookup and establishment of mTLS between node agents
+- mTLS agent logs pertaining to workload configuration data updates
+- mTLS agent logs for certificate requests
+- Cilium Agent logs related to workload enablement and disablement
+
+In addition to logs, configuration details and certificate metadata will be exposed by the mTLS agent. Users with adequate permissions and accessibility will be able to obtain workload configuration details from each mTLS agent. Users will also be able to list the names and metadata of certificates requested by each mTLS agent.
 ## Background
 
 ### Cilium Mutual Authentication Efforts
@@ -246,9 +257,26 @@ Currently, Cilium’s IPSec Transparent Encryption [does not work when kube-prox
 
 The mTLS agent could operate in the root network namespace or in its own network namespace as explored in the datapath section. The location of the mTLS agent impacts the redirection mechanism to be implemented by the Cilium bpf programs.
 
-If the mTLS agent resided in the root networking namespace, TPROXY rules for transparent redirection would be added to the root network namespace. This functionality is similar to Cilium’s existing transparent redirection mechanisms for its DNS proxy and Envoy proxy which require the proxy to be in the root network namespace. When filtering traffic for redirection to the DNS proxy, Cilium inspects the protocol type and redirects if the protocol is DNS. For Envoy proxy redirection, Cilium bpf programs configure TPROXY rules that correspond to the Envoy filters created in response to a CiliumNetworkPolicy. We could refactor the existing redirection functionality and generalize it for all use cases. Individual mechanisms for specifying which traffic should be filtered would need to be supported. The downsides of having the mTLS agent in the root network namespace are the potential for unintended TPROXY and existing IP table rule conflicts, the additional work required to support transparent redirection to generic proxy, and the proxy refactoring required to support redirection in the root network namespace.
+#### Option 1: mTLS agent in root network namespace
+If the mTLS agent resided in the root networking namespace, TPROXY rules for transparent redirection would be added to the root network namespace. 
 
-If the mTLS agent resided in a separate network namespace, TPROXY rules would be added to that namespace and redirection via the BPF would be configured with MAC and interface index rewrites. Having the mTLS agent in its own namespace would avoid any potential IP table conflict and crowding in the root network namespace and a mTLS agent proxy implementation already exists that supports the required functionality. However, as a result of not being in the root namespace, this implementation couldn’t leverage the existing Cilium transparent redirection mechanisms and would have to utilize new L2 redirection. 
+#### Pros
+
+This functionality is similar to Cilium’s existing transparent redirection mechanisms for its DNS proxy and Envoy proxy which require the proxy to be in the root network namespace. When filtering traffic for redirection to the DNS proxy, Cilium inspects the protocol type and redirects if the protocol is DNS. For Envoy proxy redirection, Cilium BPF programs configure TPROXY rules that correspond to the Envoy filters created in response to a CiliumNetworkPolicy. We could refactor the existing redirection functionality and generalize it for all use cases. Individual mechanisms for specifying which traffic should be filtered would need to be supported. 
+
+##### Cons
+
+The downsides of having the mTLS agent in the root network namespace are the potential for unintended TPROXY and existing IP table rule conflicts, the additional work required to support transparent redirection to generic proxy, and the proxy refactoring required to support redirection in the root network namespace.
+
+#### Option 2: mTLS agent in seperate network namespace
+If the mTLS agent resided in a separate network namespace, TPROXY rules would be added to that namespace and redirection via BPF would be configured with MAC and interface index rewrites. 
+
+##### Pros
+Having the mTLS agent in its own namespace would avoid any potential IP table conflict and crowding in the root network namespace and a mTLS agent proxy implementation already exists that supports the required functionality. 
+
+##### Cons
+
+As a result of not being in the root namespace, this implementation couldn’t leverage the existing Cilium transparent redirection mechanisms and would have to utilize new L2 redirection. 
 
 ### Service VIP Visibility
 
@@ -258,3 +286,19 @@ In the current design, the client mTLS agent sees only the pod IP for the destin
 * Flexibility - The mTLS agent could enforce network policies that are dependent on destination service VIP.
 
 A generic mechanism could be added to this design which allows for passing arbitrary fixed size metadata (such as the Service VIP) between the kernel and user-space enabling the mTLS agent to provide service based capabilities in addition to mTLS.
+
+## Future Milestones
+
+This CFP primarily outlines the supported functionality for an MVP Cilium mTLS Agent solution. There are several intended enhancements that we would like to explicitly call out in this CFP.
+
+### Deferred Milestone 1: Enhanced Policy Enforcement
+
+_TODO Description of deferred milestone_
+
+### Deferred Milestone 2: Service VIP
+
+_TODO Description of deferred milestone_
+
+### Deferred Milestone 3: Observability
+
+_TODO Description of deferred milestone_
