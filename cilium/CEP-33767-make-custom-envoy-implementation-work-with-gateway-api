@@ -1,0 +1,57 @@
+# CFP-33767: Fix cilium envoy implementation so that gateway api can be used with custom envoy configs
+
+**SIG: Envoy** 
+
+**Begin Design Discussion:** 2024-07-12
+
+**Cilium Release:** 1.15
+
+**Authors:** adu@nemlig.com lbe@nemlig.com
+
+## Summary
+
+Implement a fix for cilium's envoy implementation that will allow for custom CEC resources, if a certain flag/value is set.
+
+## Motivation
+
+As we have showcased in the [Nemlig.com Case study](https://www.cncf.io/case-studies/nemlig/), we use envoy to provide platform level JWT authentication as a service for our developers. But because of the automatic and creation and recreation of the default CEC to allow traffic to the services behind the gateway, we can not implement our own CEC unless we jump through hoops like deleting the gateway class from the cluster, deleting the default created CEC and creating our own custom while the gateway is programmed.
+
+## Goals
+
+Make it possible to more easily take advantage of the power of envoy in cilium by using more complex filter chains.
+## Non-Goals
+
+* This proposal does not aim to replace the default CEC creation mechanism entirely.
+* It does not cover changes to the core gateway API functionality.
+
+## Proposal
+
+### Overview
+
+Introduce a flag or configuration option that allows users to specify custom CEC resources. When this flag is set, the default CEC creation mechanism will be bypassed, and a custom CEC can be used instead.
+
+
+### Section 1
+
+1. Add a new configuration flag `useCustomCEC` in the cilium configuration.
+2. When `useCustomCEC` is set to true, cilium will skip the default CEC creation and use the custom CEC provided by the user, if a gateway is created.
+
+### Section 2
+
+1. Modify the CEC creation logic to check for the `useCustomCEC` flag.
+2. If the flag is set, load the custom CEC configuration from a specified location.
+3. Ensure that the custom CEC is compatible with the existing gateway API and envoy configurations. Or maybe just allow users full control and faith.
+
+
+## Impacts / Key Questions
+
+
+### Impact: Custom CEC Management
+
+* How will the custom CEC be managed and updated? Full faith in the user ?
+* What are the potential security implications of allowing custom CEC configurations?
+
+### Key Question: Compatibility
+
+* How will we ensure that custom CEC configurations do not break existing functionality?
+* What validation mechanisms will be in place to check the custom CEC configurations?
