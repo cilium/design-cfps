@@ -31,6 +31,9 @@ There are currently limitations for gathering and correlating flow events:
 
 ## User Stories
 - As a platform administrator managing multiple clusters, users are reporting connection timeouts reaching destinations in remote clusters. Platform admin generates traffic with trace ID IP option along the problematic path to identify all flow events associated with that packet at both the source and destination.
+
+![User story](./images/CFP-33716-user-story.png)
+
 - As a production cluster administrator, particular flows from a client are experiencing connection timeouts (e.g. [issue #32472](https://github.com/cilium/cilium/issues/32472). Enabling datapath debugging for all flows leads to event loss and low SNR. To extract dataplane information to root cause the issue, generate traffic with trace ID IP option to emit datapath debug information specific to this flow.
 
 ## Proposal
@@ -163,6 +166,8 @@ type Flow struct {
 ### Setup
 
 We set up our cluster with control-plane and worker nodes hosting a server and client pod, respectively. From the client pod, we ping the server pod IP address.
+
+![CFP Demo](./images/CFP-33716-demo.png)
 
 ### Cluster setup
 
