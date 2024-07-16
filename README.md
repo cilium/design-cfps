@@ -68,17 +68,17 @@ been merged into this repository.
 2. Implementable: CFPs that have been approved by one committer and merged into
 this repository are given the implementable status. This means that the ideas in the CFP
 have been agreed in principle and the coding work can now be started. When merged,
-the CFP should be up to date and the relevant stakeholders should be in allignement
+the CFP should be up to date and the relevant stakeholders should be in alignment
 even if they are still going through the practical ramifications of how to implement it.
 
-4. Updated: If there have been signifigant changes been the original CFP and the
-implementation, the CFP can be updated to reflect those changes. The new status of
+4. Updated: If there have been significant changes been the original CFP and the
+implementation, the CFP should be updated to reflect those changes. The new status of
 the CFP is Updated since it has changed signifigantly since it was first merged.
 
-5. Dormant: This status is given to CFP that have not or did not yet end up being
+5. Dormant: This status is given to a CFP that has not been
 implemented for a variety of reasons, like not enough engineering cycles or not
-currently a focus on of the project. This can be either CFP that were discussed
-but not implemented and the project would like to preserve those discussions for
-future use or CFPs that were deemed implementable, but no one ever got around
-to implementing them and the CFP is now dormant. Dormant CFPs can be reactivated
-at any time if there is interest in the project.
+currently a focus of the project. Any CFP where there is no active effort to
+build the solution can have the dormant status. This serves as a way to preserve
+previous discussions on a solution, but where the solution was not yet agreed
+upon as implementable. Dormant CFPs can be reactivated
+at any time if there is interest in the project. The next step for a dormant CFP is to amend it to be Implementable.
