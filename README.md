@@ -39,7 +39,7 @@ the path would be `hubble/CFP-000-change-foo-to-bar.md`.
 
 ### Getting feedback and promoting your CFP in the community:
 
-- Not sure who to ping? Take a look in the [Cilium's Community Teams](https://github.com/cilium/community/tree/main/ladder/teams)
+- Not sure who to ping? Take a look in the [Cilium's Community Teams](https://github.com/cilium/community/tree/main/ladder/teams) (descriptions of the Cilium teams can be found [here](https://github.com/cilium/cilium/blob/main/CODEOWNERS))
 - Share it on the [#development channel in Slack](https://cilium.slack.com/archives/C2B917YHE) or [one of the more specific SIG channels](https://docs.cilium.io/en/v1.13/community/community/#id1)
 - Raise the design for discussion during the [weekly community call](https://docs.cilium.io/en/v1.13/community/community/#id1)
 
