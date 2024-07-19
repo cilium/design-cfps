@@ -1,4 +1,4 @@
-# CFP-2024-06-12: Distributed Packet Tracing
+# CFP-2024-06-12: Packet Tracing
 
 ## Meta
 **SIG:**  
@@ -10,7 +10,7 @@
 **Reviewers:**  
 
 ## Summary
-We aim to enhance cross-cluster and multi-system observability for flows that contain an `ip_trace_id` IP Option (referred to as a tagged flow), thus supporting distributed tracing across networks. These tagged flows will trigger adding the ID value to Flow events messages and client (Hubble / Cilium Monitor) representation. This allows correlating flow events across systems which integrate with the span observability.
+We aim to enhance cross-cluster and multi-system observability for flows that contain an `ip_trace_id` IP Option (referred to as a tagged flow), thus supporting tracing across networks. These tagged flows will trigger adding the ID value to Flow events messages and client (Hubble / Cilium Monitor) representation. This allows correlating flow events across systems which integrate with the span observability.
 
 Additionally, within Cilium, these flows will generate datapath debugging events regardless of the global debug-verbose setting. This will improve debuggability of production systems.
 
@@ -42,13 +42,29 @@ There are currently limitations for gathering and correlating flow events:
 Offer support for packets containing a user-defined IP option field. For tagged incoming flows, handle events for this flow specially; emit datapath debugging events for these packets, include the ID in the event message, and implement hubble filtering by the ID.
 
 ### Section 1: Packet Tagging 
+### Packet Tagging Responsibility
+
 This feature does not implement the packet tagging (see Deferred Milestone 1: Tag Packets). Instead, it is the client's responsibility to tag packets via IP option embedding. Therefore, the key assumption for this feature is that tagged packets arrive at ingress points with an `ip_trace_id` already embedded in the IP options.
 
-Automatic packet tagging is not implemented for several reasons:
-- **Avoid MTU concerns:** Automatically tagging packets can cause them to exceed the MTU, leading to fragmentation and performance issues.
-- **Prevent performance loss from GRO:** GRO engine does not support packets with IP options.
-- **Avoid packet loss:** Some network devices and paths may not support IP options, causing tagged packets in the path to be dropped.
-- **IP checksum recalc:** When IP options are added or modified, the IP checksum must be recalculated, adding additional processing overhead and complexity.
+#### Reasons for Not Implementing Automatic Packet Tagging:
+
+1. **Avoid MTU Concerns:**
+   - Automatically tagging packets can cause them to exceed the MTU, leading to fragmentation and performance issues.
+
+2. **Prevent Performance Loss from GRO:**
+   - GRO engine does not support packets with IP options.
+
+3. **Avoid Packet Loss:**
+   - Some network devices and paths may not support IP options, causing tagged packets in the path to be dropped.
+   - Targets that don't support IP Options:
+      - L4 ELB
+   - Targets that support IP Options:
+      - L4 ILB
+      - Services
+      - Pod-to-pod (including across VPC)
+
+4. **IP Checksum Recalculation:**
+   - When IP options are added or modified, the IP checksum must be recalculated, adding additional processing overhead and complexity.
 
 By making packet tagging the client's responsibility, we ensure that Cilium remains unaffected by these concerns, leaving it to the clients to incorporate these key considerations into their use of this feature and decide how best to utilize it to suit their specific needs.
 
@@ -69,7 +85,7 @@ if option.Config.EnableIPOptionTracing > 0 {
 }
 ```
 
-## Section 3: Parsing
+### Section 3: Parsing
 
 Parsing at the ingress point of the TC hook allows for early detection and tracing of a flow.
 
@@ -101,7 +117,7 @@ Several edge cases are considered during parsing:
 - **No IP Options:** If the packet header indicates there are no options, parsing stops early, avoiding unnecessary processing.
 - **Invalid `ip_trace_id`:** invalid IDs are handled by setting the trace ID to 0.
 
-## Section 4: `ip_trace_id` storing
+### Section 4: `ip_trace_id` storing
 
 Creating a per-CPU array-map allows for storage of each packet’s `ip_trace_id` as it is processed. When the feature gate is disabled (see Section 2: Feature enablement), the map is not rendered, avoiding space inefficiencies.
 
@@ -120,14 +136,14 @@ struct {
 ```
 
 **Pros**
-- Non-competitive storage.
+- Non-competitive storage; since this is not saved directly to a predefined field in the skb struct, there aren’t competing uses for this storage place. It is dedicated directly to the ip_trace_id of the packet being processed.
 
 **Considerations**
 - Must ensure that data is cleared correctly.
 - This is universal storage and not specifically stored in the SKB struct, so it must be cleared when a new packet is processed.
 - At an ingress point, if there is no trace ID stored in a packet, the stored `ip_trace_id` is cleared from the array-map.
 
-## Section 5: Event integration
+### Section 5: Event integration
 
 Include ID as event field for trace and drop structs and the flow message (for Hubble integration):
 
@@ -154,16 +170,45 @@ struct drop_notify {
 type Flow struct {
     // Existing struct members
     ...
-    IpTraceID uint64 
+    IpTraceID IpTraceID 
     `protobuf:"varint,38,opt,name=ip_trace_id,json=ipTraceId,proto3" json:"ip_trace_id,omitempty"` // new trace ID field
     // Remaining struct members
     ...
 }
+
+type IpTraceID struct {
+    TraceID      uint64 `protobuf:"varint,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+    IpOptionType uint8  `protobuf:"varint,2,opt,name=ip_option_type,json=ipOptionType,proto3" json:"ip_option_type,omitempty"`
+}
 ```
 
-## Benchmark Testing
+# Benchmark Testing
 
-### Setup
+## Critical User Journeys (CUJs) and Performance Metrics
+
+### Objective:
+These benchmark tests evaluate the performance impact of the new packet tracing feature. The tests focus on measuring packet latency and throughput with and without the tracing feature and custom IP options enabled.
+
+### Key Metrics:
+
+1. **Packet Latency Under High Load**
+   a. **Objective:** Validate that packet latency remains within acceptable limits even under high load conditions.
+   b. **Metric:** Measure the round-trip time (RTT) for packets and ensure it does not exceed a specified threshold (e.g., 1ms average RTT).
+   c. **Scenarios:**
+      i. Baseline (tracing feature disabled, without IP Options)
+      ii. Test (tracing feature disabled, with IP Options)
+      iii. Baseline (tracing feature enabled, without IP Options)
+      iv. Test (tracing feature enabled, with IP Options)
+
+2. **Packet Throughput**
+   a. **Objective:** Assess the maximum throughput the system can handle without degradation in performance.
+   b. **Metric:** Determine the packet sending rate (packets per second, pps) when the rate is set (1000 pps).
+
+3. **Resource Usage**
+   a. **Objective:** Monitor resource usage (CPU, memory) of the control plane with and without the tracing feature under different loads.
+   b. **Metric:** CPU and memory usage.
+
+## Setup
 
 We set up our cluster with control-plane and worker nodes hosting a server and client pod, respectively. From the client pod, we ping the server pod IP address.
 
@@ -239,7 +284,7 @@ spec:
         - containerPort: 80
 ```
 
-### Pinging
+## Test #1 - Load Tests
 
 We find which node the client pod belongs to:
 ```sh
@@ -313,7 +358,7 @@ EOF
 
 In our `nping` command, `--rate 1000` sets the packet sending rate to 1000 packets per second, and `--debug` enables detailed logging. By default, Nmap uses parallelism parameters (see [here](https://nmap.org/book/man-performance.html)) determined by its own adaptive algorithms, and we do not modify those settings.
 
-## Results
+## Results #1
 
 The `nping` output shows the time taken to generate, send, and wait for responses of 1000 packets under four different scenarios:
 1. Baseline (with tracing feature disabled, without IP Options)
@@ -358,10 +403,118 @@ Test (with IP Options):
 - Rx time: 1.34733s | Rx bytes/s: 32657.11 | Rx pkts/s: 742.21
 - Nping done: 1 IP address pinged in 1.46 seconds
 ```
+The additional delay introduced by enabling the tracing feature is relatively small. When the feature is disabled, the average RTT (round-trip time) remains the same (0.046ms);. 
 
-The additional delay introduced by enabling the tracing feature is relatively small. When the feature is disabled, the average RTT (round-trip time) remains the same (0.046ms).
+When the tracing feature is enabled, the average RTT increases by 0.002ms when IP Options are used (0.046ms vs 0.048ms). Overall, enabling the tracing feature (and using IP Options) introduces 4.3% overhead, making it a feasible solution for environments requiring detailed packet tracing without significant degradation in network performance. Moreover, as this is a debugging feature, in environments where this feature is disabled, there is no performance loss. 
 
-When the tracing feature is enabled, the average RTT increases by 0.002ms when IP Options are used (0.046ms vs 0.048ms). Overall, the performance impact of enabling the tracing feature and using IP Options is minimal, making it a feasible solution for environments requiring detailed packet tracing without significant degradation in network performance. Moreover, as this is a debugging feature, in environments where this feature is disabled, there is no performance loss.
+## Test #2
+
+We monitor the CPU and memory usage with a high load (10000 packets at a rate of 1000 packets/s).
+
+### With IP options:
+```sh
+nping --tcp -p 80 --ip-options='\x88\x04\x34\x21' -c 100000 --rate 1000 --debug "$TARGET_IP"
+```
+
+### Without IP options:
+```sh
+nping --tcp -p 80 -c 100000 --rate 1000 --debug "$TARGET_IP"
+```
+
+We monitor with pidstat:
+```sh
+pidstat -u -r 1
+```
+This is used to monitor CPU and memory usage of running processes, with updates every second. 
+
+## Results #2
+
+We monitor CPU and memory usage during packet transmission using `pidstat -u -r 1`. The following metrics are captured every second:
+- **%usr**: Percentage of CPU utilization that occurred while executing at the user level (application).
+- **%system**: Percentage of CPU utilization that occurred while executing at the system level.
+- **%guest**: Percentage of CPU utilization that occurred while executing at the guest level.
+- **%wait**: Percentage of time the CPU was idle and waiting for I/O operations to complete.
+- **%CPU**: Total CPU usage as a sum of user, system, and guest CPU times.
+- **CPU**: Processor number on which the process is running.
+- **Command**: The name of the command/process.
+
+Below are consolidated logs showing the CPU usage for `nping` processes with and without IP options.
+
+### Baseline (with tracing feature disabled):
+```sh
+Baseline (without IP Options): 
+Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+17:49:18        0      6128   12.00   84.00    0.00    0.00   96.00    23  nping
+17:49:19        0      6128   15.00   85.00    0.00    0.00  100.00    10  nping
+17:49:20        0      6128   17.00   83.00    0.00    0.00  100.00    16  nping
+17:49:21        0      6128   14.00   86.00    0.00    0.00  100.00    16  nping
+17:49:22        0      6128   14.00   87.00    0.00    0.00  101.00     4  nping
+17:49:23        0      6128   18.00   82.00    0.00    0.00  100.00     4  nping
+17:49:24        0      6128   17.00   82.00    0.00    0.00   99.00    16  nping
+17:49:25        0      6128   18.00   82.00    0.00    0.00  100.00    18  nping
+17:49:26        0      6128   15.00   84.00    0.00    0.00   99.00    18  nping
+17:49:27        0      6128   16.00   84.00    0.00    0.00  100.00    18  nping
+17:49:28        0      6128   12.00   88.00    0.00    0.00  100.00    18  nping
+17:49:29        0      6128   11.00   89.00    0.00    1.00  100.00     6  nping
+17:49:30        0      6128   15.00   85.00    0.00    0.00  100.00    18  nping
+
+Test (with IP Options): 
+Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+17:49:04        0      6123   17.00   81.00    0.00    0.00   98.00    18  nping
+17:49:05        0      6123   13.00   87.00    0.00    0.00  100.00    18  nping
+17:49:06        0      6123   12.00   88.00    0.00    0.00  100.00    18  nping
+17:49:07        0      6123   17.00   83.00    0.00    0.00  100.00    18  nping
+17:49:08        0      6123   17.00   83.00    0.00    0.00  100.00    18  nping
+17:49:09        0      6123   13.00   87.00    0.00    0.00  100.00    18  nping
+17:49:10        0      6123   12.00   87.00    0.00    0.00   99.00    18  nping
+17:49:11        0      6123   15.00   85.00    0.00    0.00  100.00    18  nping
+17:49:12        0      6123   20.00   80.00    0.00    0.00  100.00    18  nping
+17:49:13        0      6123   18.00   82.00    0.00    0.00  100.00     6  nping
+17:49:14        0      6123   15.00   84.00    0.00    0.00   99.00     5  nping
+17:49:15        0      6123   16.00   85.00    0.00    0.00  101.00     5  nping
+17:49:16        0      6123   13.00   86.00    0.00    0.00   99.00     5  nping
+```
+### Test (with tracing feature enabled):
+```sh
+Baseline (without IP Options): 
+Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+17:30:16        0      4636   14.85   80.20    0.00    0.00   95.05     1  nping
+17:30:17        0      4636   19.00   81.00    0.00    0.00  100.00    13  nping
+17:30:18        0      4636   17.00   84.00    0.00    0.00  101.00     1  nping
+17:30:19        0      4636   12.00   88.00    0.00    0.00  100.00     1  nping
+17:30:20        0      4636   13.00   86.00    0.00    0.00   99.00     3  nping
+17:30:21        0      4636   14.00   86.00    0.00    1.00  100.00    11  nping
+17:30:22        0      4636   13.00   87.00    0.00    0.00  100.00    11  nping
+17:30:23        0      4636   19.00   80.00    0.00    0.00   99.00    23  nping
+17:30:24        0      4636   19.00   82.00    0.00    0.00  101.00    23  nping
+17:30:25        0      4636   17.00   82.00    0.00    0.00   99.00    23  nping
+17:30:26        0      4636   12.00   88.00    0.00    0.00  100.00    13  nping
+17:30:27        0      4636   11.00   88.00    0.00    0.00   99.00    13  nping
+17:30:28        0      4636   20.00   81.00    0.00    1.00  101.00    17  nping
+17:30:29        0      4636   13.00   86.00    0.00    0.00   99.00    17  nping
+
+Test (with IP Options): 
+Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+17:30:01        0      4631   13.86   81.19    0.00    0.99   95.05     3  nping
+17:30:02        0      4631   16.00   83.00    0.00    1.00   99.00    14  nping
+17:30:03        0      4631   16.00   84.00    0.00    1.00  100.00    14  nping
+17:30:04        0      4631   14.00   84.00    0.00    1.00   98.00    15  nping
+17:30:05        0      4631   14.00   86.00    0.00    0.00  100.00     3  nping
+17:30:06        0      4631   12.00   88.00    0.00    0.00  100.00     3  nping
+17:30:07        0      4631   16.00   83.00    0.00    1.00   99.00     0  nping
+17:30:08        0      4631   20.00   80.00    0.00    0.00  100.00     0  nping
+17:30:09        0      4631   17.00   82.00    0.00    1.00   99.00     1  nping
+17:30:10        0      4631   18.00   81.00    0.00    0.00   99.00     2  nping
+17:30:11        0      4631   18.00   82.00    0.00    1.00  100.00     1  nping
+17:30:12        0      4631   15.00   84.00    0.00    0.00   99.00     9  nping
+17:30:13        0      4631   17.00   82.00    0.00    1.00   99.00    21  nping
+17:30:14        0      4631   17.00   83.00    0.00    0.00  100.00    11  nping
+```
+These results indicate there is a negligible difference in CPU and memory usage when comparing with and without IP options. Both scenarios indicate similar CPU utilization, indicating that the addition of this feature and IP options has a minimal impact on system performance.
+
+
+## Feature Support
+We explore how this feature would work with other Cilium features:
 
 ## Future Milestones
 
@@ -419,6 +572,6 @@ When the tracing feature is enabled, the average RTT increases by 0.002ms when I
 - For packets that don’t have trace IDs, we don’t modify the sk_buff struct.
 
 **Considerations:**
-- Accessing the data requires extra memory access (dereferencing the pointer).
+- Requires extra memory access to dereference the pointer.
 - Management of two buffers concurrently introduces additional complexity.
 
