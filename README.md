@@ -71,11 +71,9 @@ have been agreed in principle and the coding work can now be started. When merge
 the CFP should be up to date and the relevant stakeholders should be in alignment
 even if they are still going through the practical ramifications of how to implement it.
 
-4. Updated: If there have been significant changes been the original CFP and the
-implementation, the CFP should be updated to reflect those changes. The new status of
-the CFP is Updated since it has changed signifigantly since it was first merged.
+3. Released [Project] X.Y: Everything listed in the CFP as part of the proposal (not future milestones) is merged into the project repository with the listed release.
 
-5. Dormant: This status is given to a CFP that has not been
+4. Dormant: This status is given to a CFP that has not been
 implemented for a variety of reasons, like not enough engineering cycles or not
 currently a focus of the project. Any CFP where there is no active effort to
 build the solution can have the dormant status. This serves as a way to preserve
