@@ -1,7 +1,7 @@
 # CFP-2024-06-12: Packet Tracing
 
 ## Meta
-**SIG:**  
+**SIG:** SIG-Hubble, SIG-Datapath  
 **Sharing:** Public  
 **Begin Design Discussion:** Jun 12, 2024  
 **End Design Discussion:**  
@@ -10,7 +10,7 @@
 **Reviewers:**  
 
 ## Summary
-We aim to enhance cross-cluster and multi-system observability for flows that contain an `ip_trace_id` IP Option (referred to as a tagged flow), thus supporting tracing across networks. These tagged flows will trigger adding the ID value to Flow events messages and client (Hubble / Cilium Monitor) representation. This allows correlating flow events across systems which integrate with the span observability.
+We aim to enhance cross-cluster and multi-system observability for flows that contain an `ip_trace_id` saved into a defined IP Option (referred to as a tagged flow), thus supporting tracing across networks. These tagged flows will trigger adding the ID value to Flow events messages and client (Hubble / Cilium Monitor) representation. This allows correlating flow events across systems which integrate with the span observability.
 
 Additionally, within Cilium, these flows will generate datapath debugging events regardless of the global debug-verbose setting. This will improve debuggability of production systems.
 
@@ -20,8 +20,8 @@ There are currently limitations for gathering and correlating flow events:
 - Enabling verbose datapath debugging is not possible in production environments due to traffic volume which leads to dropping flows.
 
 ## Goals
-- For tagged packets, add the ID to emitted flow events.
-- For tagged packets, emit datapath debugging events regardless of the debug-verbose setting.
+- Enable dataplane to watch for IP option tagged packets with `ip_trace_id` and emit flow events for tagged packets.
+- `ip_trace_id` can be used without enabling debug-verbose in the datapath.
 - Support both IPv4 and IPv6.
 - Add hubble filter for trace ID.
 - Allow users to define which flow IDs they want to monitor for events.
@@ -41,34 +41,7 @@ There are currently limitations for gathering and correlating flow events:
 ### Overview
 Offer support for packets containing a user-defined IP option field. For tagged incoming flows, handle events for this flow specially; emit datapath debugging events for these packets, include the ID in the event message, and implement hubble filtering by the ID.
 
-### Section 1: Packet Tagging 
-### Packet Tagging Responsibility
-
-This feature does not implement the packet tagging (see Deferred Milestone 1: Tag Packets). Instead, it is the client's responsibility to tag packets via IP option embedding. Therefore, the key assumption for this feature is that tagged packets arrive at ingress points with an `ip_trace_id` already embedded in the IP options.
-
-#### Reasons for Not Implementing Automatic Packet Tagging:
-
-1. **Avoid MTU Concerns:**
-   - Automatically tagging packets can cause them to exceed the MTU, leading to fragmentation and performance issues.
-
-2. **Prevent Performance Loss from GRO:**
-   - GRO engine does not support packets with IP options.
-
-3. **Avoid Packet Loss:**
-   - Some network devices and paths may not support IP options, causing tagged packets in the path to be dropped.
-   - Targets that don't support IP Options:
-      - L4 ELB
-   - Targets that support IP Options:
-      - L4 ILB
-      - Services
-      - Pod-to-pod (including across VPC)
-
-4. **IP Checksum Recalculation:**
-   - When IP options are added or modified, the IP checksum must be recalculated, adding additional processing overhead and complexity.
-
-By making packet tagging the client's responsibility, we ensure that Cilium remains unaffected by these concerns, leaving it to the clients to incorporate these key considerations into their use of this feature and decide how best to utilize it to suit their specific needs.
-
-### Section 2: Feature Enablement
+### Section 1: Feature Enablement
 `--enable-ip-option-tracing=<type>` to define the IP option type used to embed the trace ID value
 - `<type>` corresponds to the IP option value ([https://www.iana.org/assignments/ip-parameters/ip-parameters.xhtml](https://www.iana.org/assignments/ip-parameters/ip-parameters.xhtml))
 - By default, the feature is disabled (`<type>=0`).
@@ -85,14 +58,14 @@ if option.Config.EnableIPOptionTracing > 0 {
 }
 ```
 
-### Section 3: Parsing
+### Section 2: Parsing
 
 Parsing at the ingress point of the TC hook allows for early detection and tracing of a flow.
 
 ```c
 #ifdef ENABLE_PACKET_IP_TRACING
-    check_and_store_ip_trace_id(ctx, ENABLE_PACKET_IP_TRACING);
     // Do parsing and storing of ip_trace_id
+    check_and_store_ip_trace_id(ctx, ENABLE_PACKET_IP_TRACING);
 #endif
 ```
 ```c
@@ -117,7 +90,7 @@ Several edge cases are considered during parsing:
 - **No IP Options:** If the packet header indicates there are no options, parsing stops early, avoiding unnecessary processing.
 - **Invalid `ip_trace_id`:** invalid IDs are handled by setting the trace ID to 0.
 
-### Section 4: `ip_trace_id` storing
+### Section 3: `ip_trace_id` state
 
 Creating a per-CPU array-map allows for storage of each packet’s `ip_trace_id` as it is processed. When the feature gate is disabled (see Section 2: Feature enablement), the map is not rendered, avoiding space inefficiencies.
 
@@ -136,14 +109,14 @@ struct {
 ```
 
 **Pros**
-- Non-competitive storage; since this is not saved directly to a predefined field in the skb struct, there aren’t competing uses for this storage place. It is dedicated directly to the ip_trace_id of the packet being processed.
+- Non-competitive storage; packet tracing ID is stored outside of the skb struct which has limited room for custom attributes.
 
 **Considerations**
-- Must ensure that data is cleared correctly.
-- This is universal storage and not specifically stored in the SKB struct, so it must be cleared when a new packet is processed.
-- At an ingress point, if there is no trace ID stored in a packet, the stored `ip_trace_id` is cleared from the array-map.
+- Must ensure that data is zero'ed correctly.
+- This is universal storage and not specifically stored in the SKB struct, so it must be zero'ed when a new packet is processed.
+- At an ingress point, if there is no trace ID stored in a packet, the stored `ip_trace_id` is zero'ed from the array-map.
 
-### Section 5: Event integration
+### Section 4: Event integration
 
 Include ID as event field for trace and drop structs and the flow message (for Hubble integration):
 
@@ -182,14 +155,54 @@ type IpTraceID struct {
 }
 ```
 
-# Benchmark Testing
+## Security Considerations
 
-## Critical User Journeys (CUJs) and Performance Metrics
+### Section 1: Flow handling
 
-### Objective:
+Packets with trace identifiers are processed in the exact same way as non-tagged traffic. The only difference is that the event message includes the ip_trace_id identifier for tagged traffic (which we load via a constant-time check). This approach ensures there is no additional threat of denial of service or system flooding with these tagged packets.
+
+Key points:
+- **Disabled by default**: the tracing feature is disabled by default. When disabled, tagged packets are not parsed, and processed identically to all traffic.
+- **No special handling**: tagged packets are not treated differently in the network stack, there is no preferential processing that could be exploited. This ensures that tagged packets do not create any special conditions that could be manipulated by malicious actors.
+- **Denial of service**: there is no increased risk of denial of service attacks as the system processes tagged and non-tagged packets identically.
+
+Therefore, typical network security is maintained while providing IP Packet Tracing visibility.
+
+### Section 2: Non-automated tagging
+
+This feature does not implement the packet tagging (see Deferred Milestone 1: Tag Packets). Instead, it is the client's responsibility to tag packets via IP option embedding. Therefore, the key assumption for this feature is that tagged packets arrive at ingress points with an `ip_trace_id` already embedded in the IP options.
+
+#### Reasons for Not Implementing Automatic Packet Tagging:
+
+1. **Avoid MTU Concerns:**
+   - Automatically tagging packets can cause them to exceed the MTU, leading to fragmentation and performance issues.
+   
+2. **Prevent Performance Loss from GRO:**
+   - GRO engine does not support packets with IP options.
+
+3. **Avoid Packet Loss:**
+   - Some network devices and paths may not support IP options, causing tagged packets in the path to be dropped.
+   - Targets that don't support IP Options:
+      - L4 ELB
+        - External load balancer support for tracing may vary depending on the specific implementation. Some load balancers may remove IP options when forwarding traffic.
+   - Targets that support IP Options:
+      - L4 ILB
+      - Services
+      - Pod-to-pod (including across VPC)
+
+4. **IP Checksum Recalculation:**
+   - When IP options are added or modified, the IP checksum must be recalculated, adding additional processing overhead and complexity.
+
+Mitigation: This feature is a manually enabled debug option, giving users full control over performance overhead of IP option tagged packets. Users can manage overhead and performance concerns related to MTU, GRO compatibility, packet loss, and IP checksum recalculation. By making packet tagging the client's responsibility, Cilium remains unaffected by these concerns, allowing clients to incorporate these considerations into their use of the feature and determine the best way to utilize it according to their specific needs.
+
+## Benchmark Testing
+
+### Critical User Journeys (CUJs) and Performance Metrics
+
+#### Objective:
 These benchmark tests evaluate the performance impact of the new packet tracing feature. The tests focus on measuring packet latency and throughput with and without the tracing feature and custom IP options enabled.
 
-### Key Metrics:
+#### Key Metrics:
 
 1. **Packet Latency Under High Load**
    a. **Objective:** Validate that packet latency remains within acceptable limits even under high load conditions.
@@ -208,13 +221,13 @@ These benchmark tests evaluate the performance impact of the new packet tracing 
    a. **Objective:** Monitor resource usage (CPU, memory) of the control plane with and without the tracing feature under different loads.
    b. **Metric:** CPU and memory usage.
 
-## Setup
+### Setup
 
 We set up our cluster with control-plane and worker nodes hosting a server and client pod, respectively. From the client pod, we ping the server pod IP address.
 
 ![CFP Demo](./images/CFP-33716-demo.png)
 
-### Cluster setup
+#### Cluster setup
 
 **Provision a Kind cluster:**
 ```sh
@@ -232,7 +245,7 @@ helm upgrade -i cilium ./install/kubernetes/cilium \
   --set operator.image.pullPolicy=Never
 ```
 
-### Client pod YAML
+#### Client pod YAML
 
 ```yaml
 apiVersion: v1
@@ -251,7 +264,7 @@ spec:
     - "999999"
 ```
 
-### Server pod YAML
+#### Server pod YAML
 
 ```yaml
 apiVersion: apps/v1
@@ -284,7 +297,7 @@ spec:
         - containerPort: 80
 ```
 
-## Test #1 - Load Tests
+### Test #1 - Load Tests
 
 We find which node the client pod belongs to:
 ```sh
@@ -358,7 +371,7 @@ EOF
 
 In our `nping` command, `--rate 1000` sets the packet sending rate to 1000 packets per second, and `--debug` enables detailed logging. By default, Nmap uses parallelism parameters (see [here](https://nmap.org/book/man-performance.html)) determined by its own adaptive algorithms, and we do not modify those settings.
 
-## Results #1
+### Results #1
 
 The `nping` output shows the time taken to generate, send, and wait for responses of 1000 packets under four different scenarios:
 1. Baseline (with tracing feature disabled, without IP Options)
@@ -368,7 +381,7 @@ The `nping` output shows the time taken to generate, send, and wait for response
 
 The output is logged, showing the time taken to generate, send, and wait for responses of 1000 packets.
 
-### Baseline (with tracing feature disabled):
+#### Baseline (with tracing feature disabled):
 
 ```sh
 Baseline (without IP Options):
@@ -386,7 +399,7 @@ Test (with IP Options):
 - Nping done: 1 IP address pinged in 1.45 seconds
 ```
 
-## With tracing feature enabled:
+#### With tracing feature enabled:
 
 ```sh
 Baseline (without IP Options):
@@ -407,16 +420,16 @@ The additional delay introduced by enabling the tracing feature is relatively sm
 
 When the tracing feature is enabled, the average RTT increases by 0.002ms when IP Options are used (0.046ms vs 0.048ms). Overall, enabling the tracing feature (and using IP Options) introduces 4.3% overhead, making it a feasible solution for environments requiring detailed packet tracing without significant degradation in network performance. Moreover, as this is a debugging feature, in environments where this feature is disabled, there is no performance loss. 
 
-## Test #2
+### Test #2
 
 We monitor the CPU and memory usage with a high load (10000 packets at a rate of 1000 packets/s).
 
-### With IP options:
+#### With IP options:
 ```sh
 nping --tcp -p 80 --ip-options='\x88\x04\x34\x21' -c 100000 --rate 1000 --debug "$TARGET_IP"
 ```
 
-### Without IP options:
+#### Without IP options:
 ```sh
 nping --tcp -p 80 -c 100000 --rate 1000 --debug "$TARGET_IP"
 ```
@@ -427,7 +440,7 @@ pidstat -u -r 1
 ```
 This is used to monitor CPU and memory usage of running processes, with updates every second. 
 
-## Results #2
+### Results #2
 
 We monitor CPU and memory usage during packet transmission using `pidstat -u -r 1`. The following metrics are captured every second:
 - **%usr**: Percentage of CPU utilization that occurred while executing at the user level (application).
@@ -440,7 +453,7 @@ We monitor CPU and memory usage during packet transmission using `pidstat -u -r 
 
 Below are consolidated logs showing the CPU usage for `nping` processes with and without IP options.
 
-### Baseline (with tracing feature disabled):
+#### Baseline (with tracing feature disabled):
 ```sh
 Baseline (without IP Options): 
 Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
@@ -474,7 +487,7 @@ Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Comma
 17:49:15        0      6123   16.00   85.00    0.00    0.00  101.00     5  nping
 17:49:16        0      6123   13.00   86.00    0.00    0.00   99.00     5  nping
 ```
-### Test (with tracing feature enabled):
+#### Test (with tracing feature enabled):
 ```sh
 Baseline (without IP Options): 
 Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
@@ -513,8 +526,17 @@ Time          UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Comma
 These results indicate there is a negligible difference in CPU and memory usage when comparing with and without IP options. Both scenarios indicate similar CPU utilization, indicating that the addition of this feature and IP options has a minimal impact on system performance.
 
 
-## Feature Support
-We explore how this feature would work with other Cilium features:
+## Compatibility with Other Cilium Features
+L7 Policies/Envoy - Status: in investigation
+The packet tracing feature is for network-layer tracing. Its compatibility with L7 policies and Envoy has not been fully tested. We expect that tracing will not capture the full context of L7-managed traffic, as the tracing occurs at a different layer. Explicit support for L7 policies and Envoy is not provided at this stage.
+
+Egress Gateway - Status: in investigation
+We expect that packet tracing should work with the egress gateway, as the tagging occurs at the network layer before routing decisions are made. However, additional testing is required to confirm that tagged packets maintain their traceability through the egress gateway.
+
+IPSec/Wireguard - Status: in investigation
+We expect packet tracing to be compatible with IPSec and Wireguard. These protocols encrypt packets between known 
+nodes in a cluster, but each node also has its own encryption key-pair to encrypt/decrypt traffic to and from. As
+the ip_trace_id is a series of bytes, in the packet, we expect this to be compatible with IPSec/Wireguard.
 
 ## Future Milestones
 
@@ -572,6 +594,5 @@ We explore how this feature would work with other Cilium features:
 - For packets that don’t have trace IDs, we don’t modify the sk_buff struct.
 
 **Considerations:**
-- Requires extra memory access to dereference the pointer.
+- Accessing the data requires extra memory access (dereferencing the pointer).
 - Management of two buffers concurrently introduces additional complexity.
-
