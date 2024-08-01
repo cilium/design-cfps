@@ -80,3 +80,5 @@ build the solution can have the dormant status. This serves as a way to preserve
 previous discussions on a solution, but where the solution was not yet agreed
 upon as implementable. Dormant CFPs can be reactivated
 at any time if there is interest in the project. The next step for a dormant CFP is to amend it to be Implementable.
+
+5. Declined: This proposal was considered by the community but ultimately rejected.
