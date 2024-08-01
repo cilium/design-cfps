@@ -26,7 +26,7 @@ needs when creating a proposal.
 
 Many design docs also begin their life as a Google doc or other shareable
 file for easy commenting and editing when still in the early stages of discussion.
-Once your proposal is ready, submit it as a PR to the `cilium` folder.
+Once your proposal is ready, submit it as a PR to it's dedicated project folder (`cilium, hubble, tetragon`).
 
 ### When you are ready to submit your CFP please:
 
