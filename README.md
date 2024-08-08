@@ -42,10 +42,7 @@ Promote awareness about your CFP in the community:
 
 # Getting a design approved
 
-For a CFP to be considered implementable, a Cilium committer needs to approve it.
-After their approval, the design can be merged. A merged design proposal 
-means the proposal is viable to be implemented, but not that there is a
-100% chance the code will be accepted.
+A CFP can be merged with the approval of one committer. A CFP merged as implementable means the proposal is viable to be implemented, but not that there is a 100% chance the code will be accepted. Dormant and declined CFPs are also an important part of documentation for the project and should also be merged.
 
 # Design proposal drift
 
@@ -59,7 +56,7 @@ the starting point for the implementation, but can also be updated as needed.
 
 # Status
 
-The status of a CFP indicates its maturity. There are four different statuses
+The status of a CFP indicates its maturity. There are five different statuses
 that a CFP can have:
 
 1. Draft: A CFP in any form (Google doc, HackMD, PR, ect.) with associated Github issue that has not yet
