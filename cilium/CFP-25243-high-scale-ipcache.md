@@ -8,6 +8,7 @@
 
 **Authors:** Paul Chaignon <paul@isovalent.com>
 
+**Status:** Dormant
 ## Summary
 
 This CFP describes a new mode for the ipcache to enable scaling to very large
