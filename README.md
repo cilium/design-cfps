@@ -45,10 +45,7 @@ the path would be `hubble/CFP-000-change-foo-to-bar.md`.
 
 # Getting a design approved
 
-For a CFP to be considered viable, a Cilium committer needs to aprove it.
-After the approval, the design can be merged. A merged design proposal 
-means the proposal is viable to be executed on, but not that there is a
-100% chance it will be accepted.
+A CFP can be merged with the approval of one committer. A CFP merged as implementable means the proposal is viable to be implemented, but not that there is a 100% chance the code will be accepted. Dormant and declined CFPs are also an important part of documentation for the project and should also be merged.
 
 # Design proposal drift
 
@@ -57,5 +54,31 @@ will begin to drift slightly from the original design. This is expected and
 there is no expectation that the original design proposal needs to be updated
 to reflect these differences.
 
-The code and our documentation are the ultimate sources of truth. CFPs are merely
-the starting point for the implementation.
+The code and our documentation are the ultimate sources of truth. CFPs are
+the starting point for the implementation, but can also be updated as needed.
+
+# Status
+
+The status of a CFP indicates its maturity. There are five different statuses
+that a CFP can have:
+
+1. Draft: A CFP in any form (Google doc, HackMD, PR, ect.) with associated Github issue that has not yet
+been merged into this repository.
+
+2. Implementable: CFPs that have been approved by one committer and merged into
+this repository are given the implementable status. This means that the ideas in the CFP
+have been agreed in principle and the coding work can now be started. When merged,
+the CFP should be up to date and the relevant stakeholders should be in alignment
+even if they are still going through the practical ramifications of how to implement it.
+
+3. Released [Project] X.Y: Everything listed in the CFP as part of the proposal (not future milestones) is merged into the project repository with the listed release.
+
+4. Dormant: This status is given to a CFP that has not been
+implemented for a variety of reasons, like not enough engineering cycles or not
+currently a focus of the project. Any CFP where there is no active effort to
+build the solution can have the dormant status. This serves as a way to preserve
+previous discussions on a solution, but where the solution was not yet agreed
+upon as implementable. Dormant CFPs can be reactivated
+at any time if there is interest in the project. The next step for a dormant CFP is to amend it to be Implementable.
+
+5. Declined: This proposal was considered by the community but ultimately rejected. The community may come back to the proposal in the future but a new CFP should be used. Rejected proposals can be useful as documentation on why the given proposal did not make sense.
