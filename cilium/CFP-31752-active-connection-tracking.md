@@ -8,6 +8,8 @@
 
 **Authors:** Aleksander Mistewicz <amistewicz@google.com>, Rob Scott <robertjscott@google.com>
 
+**Status:** Released Cilium 1.17
+
 ## Summary
 
 Count number of opened and closed connections, grouped by service and zone.
