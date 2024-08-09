@@ -22,7 +22,13 @@ accept.
 To create a CFP, it is recommended to use the `CFP-003-template.md`
 file as an outline. The structure of this template is meant to provide a starting
 point for people. Feel free to edit and modify your outline to best fit your
-needs when creating a proposal. When you are ready to submit your CFP please:
+needs when creating a proposal.
+
+Many design docs also begin their life as a Google doc or other shareable
+file for easy commenting and editing when still in the early stages of discussion.
+Once your proposal is ready, submit it as a PR to it's dedicated project folder (`cilium, hubble, tetragon`).
+
+### When you are ready to submit your CFP please:
 
 1. Create a CFP issue in the repo your design applies to if you haven't already
 2. Create the file in this repo, with a path of `<repo>/CFP-###-subject.md` where the number is the CFP issue number
@@ -31,12 +37,9 @@ For example, if your issue is filed in https://github.com/cilium/hubble with
 the issue number 000, and the subject of that CFP is to "Change foo to bar",
 the path would be `hubble/CFP-000-change-foo-to-bar.md`.
 
-Many design docs also begin their life as a Google doc or other shareable
-file for easy commenting and editing when still in the early stages of discussion.
-Once your proposal is ready, submit it as a PR to the design-cfps folder for approval.
+### Getting feedback and promoting your CFP in the community:
 
-Promote awareness about your CFP in the community:
-
+- Not sure who to ping? Take a look in the [Cilium's Community Teams](https://github.com/cilium/community/tree/main/ladder/teams) (descriptions of the Cilium teams can be found [here](https://github.com/cilium/cilium/blob/main/CODEOWNERS))
 - Share it on the [#development channel in Slack](https://cilium.slack.com/archives/C2B917YHE) or [one of the more specific SIG channels](https://docs.cilium.io/en/v1.13/community/community/#id1)
 - Raise the design for discussion during the [weekly community call](https://docs.cilium.io/en/v1.13/community/community/#id1)
 
