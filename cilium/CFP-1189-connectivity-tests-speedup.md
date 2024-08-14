@@ -4,7 +4,7 @@
 
 **Begin Design Discussion:** 2024-01-19
 
-**Cilium Release:** 1.15
+**Status:** Released Cilium-cli 0.16
 
 **Authors:** Viktor Kurchenko <viktor.kurchenko@isovalent.com>
 
