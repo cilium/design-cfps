@@ -10,6 +10,8 @@
 
 **Authors:** Michi Mutsuzaki `<michi@isovalent.com>`
 
+**Status:** Implementable
+
 ## Summary
 
 Move [cilium/cilium-cli] code into [cilium/cilium] repository.
