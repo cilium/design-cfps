@@ -10,7 +10,7 @@
 
 **Authors:** Michi Mutsuzaki `<michi@isovalent.com>`
 
-**Status:** Implementable
+**Status:** Released Cilium 1.17
 
 ## Summary
 
