@@ -6,7 +6,7 @@
 
 **Cilium Release:** 1.17
 
-**Authors:** Hemanth Malla <hemanth.malla@datadoghq.com>, Vipul Singh <singhvipul@microsoft.com>
+**Authors:** Hemanth Malla <hemanth.malla@datadoghq.com>, Vipul Singh <singhvipul@microsoft.com>, Tamilmani Manoharan <tamanoha@microsoft.com>
 
 ## Summary
 
@@ -32,7 +32,7 @@ Users rely on toFQDN policies to enforce network policies against traffic to des
 
 ### Overview
 
-There are two parts to enforcing toFQDN network policy. L4 policy enforcement against IP addresses resolved from an FQDN and policy enforcement on DNS requests (L7 DNS policy). To enforce L4 policy, per endpoint policy bpf maps need to be updated. We'd like to avoid multiple processes writing entries to policy maps, so the standalone DNS proxy (SDP) needs a mechanism to notify agent of newly resolved FQDN <> IP address mappings. This CFP proposes exposing a new gRPC streaming API from the cilium agent. Since the connection is bi-directional, the cilium agent can reuse the same connection to notify the SDP of L7 DNS policy changes. 
+There are two parts to enforcing toFQDN network policy. L3/L4 policy enforcement against IP addresses resolved from an FQDN and policy enforcement on DNS requests (L7 DNS policy). To enforce L3/L4 policy, per endpoint policy bpf maps need to be updated. We'd like to avoid multiple processes writing entries to policy maps, so the standalone DNS proxy (SDP) needs a mechanism to notify agent of newly resolved FQDN <> IP address mappings. This CFP proposes exposing a new gRPC streaming API from the cilium agent. Since the connection is bi-directional, the cilium agent can reuse the same connection to notify the SDP of L7 DNS policy changes.
 
 Additionally, SDP needs to translate the IP address to cilium identity to enforce the policy. Our proposal involves retrieving the identity mapping from the cilium_ipcache BPF map. Currently L7 proxy (envoy) relies on accessing ipcache directly as well. We aren't aware of any efforts to introduce an abstraction to avoid reading bpf maps owned by the cilium agent beyond the agent process. If / when such abstraction is introduced, SDP can also be updated to implement a similar mechanism. We brainstormed a few options on how the API might look like if we exchange IP to identity mappings via the API as well, but it brings in a lot of additional complexity to keep the mappings in sync as endpoints churn. This CFP will focus on the contract between SDP and Cilium agent to exchange minimum information for implementing the high availability mode.
 
@@ -50,7 +50,8 @@ message FQDNMapping {
     repeated bytes IPS = 2; // Resolved IP addresses
     uint32 TTL = 3;
     uint64 source_identity = 4; // Identity of the client making the DNS request
-    int dns_response_code = 5;
+    bytes source_ip = 5; // IP address of the client making the DNS request
+    int dns_response_code = 6;
 }
 ```
 Response :
@@ -65,20 +66,25 @@ Method : UpdatesDNSRules ( Invoked from agent to SDP via bi-directional stream )
 _rpc UpdatesDNSRules(stream DNSPolicies) returns (Result){}_
 Request :
 ```
-message DNSPolicy {
-  uint64 source_identity = 1;  // Identity of the workload this L7 DNS policy should apply to
-  repeated string dns_pattern = 2;  // Allowed DNS pattern this identity is allowed to resolve
-  uint64 dns_server_identity = 3;  // Identity of destination DNS server
-  uint16 dns_server_port = 4;   
-  uint8 dns_server_proto = 5;
+message DNSServer {
+  uint64 dns_server_identity = 1;  // Identity of destination DNS server
+  uint32 dns_server_port = 2;
+  uint32 dns_server_proto = 3;
 }
 
+message DNSPolicy {
+  uint64 source_identity = 1;  // Identity of the workload this L7 DNS policy should apply to
+  repeated string dns_pattern = 2;  // Allowed DNS pattern this identity is allowed to resolve.
+  repeated DNSServer dns_servers = 3;
+}
 
 message DNSPolicies {
-  repeated DNSPolicy l7_dns_policy = 1;
+  repeated DNSPolicy egress_l7_dns_policy = 1;
 }
 
 ```
+
+*Note: `dns_pattern` follows the same convention used in CNPs. See https://docs.cilium.io/en/stable/security/policy/language/#dns-based for more details*
 
 Response :
 ```
@@ -94,7 +100,7 @@ SDP and agent's DNS proxy will run on the same port using SO_REUSEPORT. By defau
 
 ### High Level Information Flow
 
-* Agent starts up with gRPC streaming service.
+* Agent starts up with gRPC streaming service (only after resources are synced from k8s and ipcache bpf map is populated)
 * SDP starts up.
 * Connects to gRPC service, retrying periodically until success.
 * Agent sends current snapshot for L7 DNS Policy enforcement via UpdatesDNSRules to SDP.
@@ -107,3 +113,11 @@ SDP and agent's DNS proxy will run on the same port using SO_REUSEPORT. By defau
 * Make upstream DNS request from SDP.
 * On response, SDP invokes UpdatesMappings() to notify agent of new mappings.
 * Release DNS response after success from  UpdatesMappings() / timeout.
+
+### Handling SDP <> Agent re-connections
+
+* When the agent is unavailable, SDP will periodically attempt to re-connect to the streaming service. Any FQDN<>IP mappings resolved when the agent is down will be cached in SDP and `UpdatesMappings` will be retried after establishing the connection.
+  * A new bpf map for ipcache is populated on agent startup, so SDP needs to re-open the ipcache bpf map when the connection is re-established. See https://github.com/cilium/cilium/pull/32864 for similar handling in envoy.
+  * On a new connection from SDP, the agent will invoke `UpdatesDNSRules` to notify SDP of all L7 DNS policy rules.
+
+* SDP will not listen on the DNS proxy port until a connection is established with cilium agent and initial L7 DNS policy rules are received. Meanwhile, built-in DNS proxy will continue to serve requests. SDP relies on cilium agent for initial bootstrap. In future, we could make SDP retrieve initial policy information from other sources, but this is not in scope for this CFP.
