@@ -82,3 +82,24 @@ upon as implementable. Dormant CFPs can be reactivated
 at any time if there is interest in the project. The next step for a dormant CFP is to amend it to be Implementable.
 
 5. Declined: This proposal was considered by the community but ultimately rejected. The community may come back to the proposal in the future but a new CFP should be used. Rejected proposals can be useful as documentation on why the given proposal did not make sense.
+
+## Other resources 
+
+Need some more clairification? Here are a list of resources on the Cilium community, and some FAQs on how to get more involved! Or please reach out on the Cilium Slack for other questions.
+
+### FAQs
+
+<details>
+<summary>Who can review a CFP?</summary>
+    Anyone can leave a helpful review on a CFP! Any questions, points of clarification that can help refine a CFP is greatly appreciated.
+</details>
+
+<details>
+<summary>Who can approve a CFP?</summary>
+    In order to approve a CFP, an Approver in the Cilium community must review a CFP submitted. It is expected that a [Code Team](https://github.com/cilium/community/blob/main/CONTRIBUTOR-ROLES.md#code-team) can approve a CFP.
+</details>
+
+<details>
+<summary>How to gauge interest on my CFP?</summary>
+    Attend a Cilium weekly meeting or ask on the Cilium Slack for getting preliminary feedback on your CFP. If possible, ask in the relevant [SIG](https://docs.cilium.io/en/stable/community/community/#special-interest-groups).
+</details>
