@@ -85,7 +85,7 @@ at any time if there is interest in the project. The next step for a dormant CFP
 
 ## Other resources 
 
-Need some more clairification? Here are a list of resources on the Cilium community, and some FAQs on how to get more involved! Or please reach out on the Cilium Slack for other questions.
+Need more clarification? Here are a list of resources from the Cilium community, and some FAQs on how to get more involved! Can't find your answer here? Please reach out on the Cilium Slack [#development](https://cilium.slack.com/archives/C2B917YHE) for other questions.
 
 ### FAQs
 
