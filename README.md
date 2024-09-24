@@ -101,5 +101,5 @@ Need more clarification? Here are a list of resources from the Cilium community,
 
 <details>
 <summary>How can I gauge interest on my CFP?</summary>
-    Attend a Cilium weekly meeting or ask on the Cilium Slack for getting preliminary feedback on your CFP. If possible, ask in the relevant [SIG](https://docs.cilium.io/en/stable/community/community/#special-interest-groups).
+    To get preliminary feedback on your CFP, attend a Cilium weekly [community meeting](https://docs.cilium.io/en/stable/community/community/#community-meetings) or ask on the Cilium Slack . If possible, ask in the relevant [SIG](https://docs.cilium.io/en/stable/community/community/#special-interest-groups) slack channel or meeting.
 </details>
