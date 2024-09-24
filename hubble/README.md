@@ -1,6 +1,6 @@
 # Hubble CFP
 
-This folder is dedicated to CFPs that proposes a change to multiple SIGs, and cannot be placed in it's own SIG folder (for example, Cilium or Tetragon).
+This folder is dedicated to CFPs that proposes a change to multiple SIGs, and cannot be placed in it's own appropriate folder (for example, Cilium or Tetragon).
 
 CFPs in this folder must have a Cilium Committer approve it in order for it reach the `Provisional` status.
 
