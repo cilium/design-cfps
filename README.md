@@ -91,7 +91,7 @@ Need more clarification? Here are a list of resources from the Cilium community,
 
 <details>
 <summary>Who can review a CFP?</summary>
-    Anyone can leave a helpful review on a CFP! Any questions, points of clarification that can help refine a CFP is greatly appreciated.
+    Anyone can leave a helpful review on a CFP! Questions, ideas, and points of clarification that can help refine a CFP are greatly appreciated.
 </details>
 
 <details>
