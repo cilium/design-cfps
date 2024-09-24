@@ -96,7 +96,7 @@ Need more clarification? Here are a list of resources from the Cilium community,
 
 <details>
 <summary>Who can approve a CFP?</summary>
-    In order to approve a CFP, an Approver in the Cilium community must review a CFP submitted. It is expected that a [Code Team](https://github.com/cilium/community/blob/main/CONTRIBUTOR-ROLES.md#code-team) can approve a CFP.
+    Any [committer](https://github.com/cilium/cilium/blob/main/MAINTAINERS.md) can approve a CFP.
 </details>
 
 <details>
