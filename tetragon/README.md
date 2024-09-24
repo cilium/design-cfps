@@ -1,6 +1,6 @@
 # Tetragon CFP
 
-This folder is dedicated to CFPs that proposes a change to the Tetragon project, and cannot be placed in it's own appropriate folder (for example, Cilium or Hubble).
+This folder is dedicated to CFPs that proposes a change to the Tetragon sub-project, and cannot be placed in it's own appropriate folder (for example, Cilium or Hubble).
 
 CFPs in this folder must have a Cilium Committer approve it in order for it reach the `Provisional` status.
 
