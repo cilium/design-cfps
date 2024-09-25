@@ -34,7 +34,7 @@ Users rely on toFQDN policies to enforce network policies against traffic to des
 
 There are two parts to enforcing toFQDN network policy. L3/L4 policy enforcement against IP addresses resolved from an FQDN and policy enforcement on DNS requests (L7 DNS policy). To enforce L3/L4 policy, per endpoint policy bpf maps need to be updated. We'd like to avoid multiple processes writing entries to policy maps, so the standalone DNS proxy (SDP) needs a mechanism to notify agent of newly resolved FQDN <> IP address mappings. This CFP proposes exposing a new gRPC streaming API from the cilium agent. Since the connection is bi-directional, the cilium agent can reuse the same connection to notify the SDP of L7 DNS policy changes.
 
-Additionally, SDP needs to translate the IP address to cilium identity to enforce the policy. Our proposal involves retrieving the identity mapping from the cilium_ipcache BPF map. Currently L7 proxy (envoy) relies on accessing ipcache directly as well. We aren't aware of any efforts to introduce an abstraction to avoid reading bpf maps owned by the cilium agent beyond the agent process. If / when such abstraction is introduced, SDP can also be updated to implement a similar mechanism. We brainstormed a few options on how the API might look like if we exchange IP to identity mappings via the API as well, but it brings in a lot of additional complexity to keep the mappings in sync as endpoints churn. This CFP will focus on the contract between SDP and Cilium agent to exchange minimum information for implementing the high availability mode.
+Additionally, SDP needs to translate the IP address to cilium identity to enforce the policy. This CFP proposes to retrieve the identity mapping from the cilium_ipcache BPF map. If / when other another abstraction is introduced for getting IP<->Identity mappings (for ex, in L7 proxy), this implementation can use that abstraction. This CFP will focus on the contract between SDP and Cilium agent to exchange minimum information for implementing the high availability mode.
 
 In addition to existing unix domain socket (UDS) opened by the agent to host HTTP APIs, we'll need a new UDS for the gRPC streaming service with similar permissions. 
 
@@ -121,3 +121,7 @@ SDP and agent's DNS proxy will run on the same port using SO_REUSEPORT. By defau
   * On a new connection from SDP, the agent will invoke `UpdatesDNSRules` to notify SDP of all L7 DNS policy rules.
 
 * SDP will not listen on the DNS proxy port until a connection is established with cilium agent and initial L7 DNS policy rules are received. Meanwhile, built-in DNS proxy will continue to serve requests. SDP relies on cilium agent for initial bootstrap. In future, we could make SDP retrieve initial policy information from other sources, but this is not in scope for this CFP.
+
+### Handling Upgrades
+
+Other than the streaming API from the agent, this CFP introduces a dependency on the ipcache bpf map which isn't a stable API exposed to components beyond the agent. Sufficent tests will be added to catch such datapath changes impacting SDP. In order to support a safe upgrade path, SDP would need to support reading from the current and future formats of the map (including possibly reading from an entire new map).
