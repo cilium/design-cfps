@@ -42,7 +42,7 @@ In addition to existing unix domain socket (UDS) opened by the agent to host HTT
 
 Method : UpdateMappings (Invoked from SDP to agent)
 
-_rpc UpdatesMappings(steam FQDNMapping) returns (Result){}_
+_rpc UpdatesMappings(FQDNMapping) returns (UpdatesMappingsResult){}_
 Request :
 ```
 message FQDNMapping {
@@ -56,14 +56,14 @@ message FQDNMapping {
 ```
 Response :
 ```
-message Result {
+message UpdatesMappingsResult {
     bool success = 1;
 }
 ```
 
-Method : UpdatesDNSRules ( Invoked from agent to SDP via bi-directional stream )
+Method : SubscribeToDNSPolicies ( Invoked from agent to SDP via bi-directional stream )
 
-_rpc UpdatesDNSRules(stream DNSPolicies) returns (Result){}_
+_rpc SubscribeToDNSPolicies(stream DNSPoliciesResult) returns (stream DNSPolicies){}_
 Request :
 ```
 message DNSServer {
@@ -80,17 +80,22 @@ message DNSPolicy {
 
 message DNSPolicies {
   repeated DNSPolicy egress_l7_dns_policy = 1;
+  string request_id = 2; // Random UUID based identifier which will be referenced in ACKs
 }
 
 ```
 
 *Note: `dns_pattern` follows the same convention used in CNPs. See https://docs.cilium.io/en/stable/security/policy/language/#dns-based for more details*
 
-Response :
+*Note: `DNSPolicies` is a snapshot of the latest known policy information for all endpoints on the host. Sending a snapshot allows for dealing with deletions automatically*
+
+SDP to CA message format :
 ```
-message Result  {
-     bool success = 1;
+message DNSPoliciesResult {
+    bool success = 1;
+    string request_id = 2;
 }
+```
 ```
 
 ### Load balancing
@@ -124,4 +129,4 @@ SDP and agent's DNS proxy will run on the same port using SO_REUSEPORT. By defau
 
 ### Handling Upgrades
 
-Other than the streaming API from the agent, this CFP introduces a dependency on the ipcache bpf map which isn't a stable API exposed to components beyond the agent. Sufficent tests will be added to catch such datapath changes impacting SDP. In order to support a safe upgrade path, SDP would need to support reading from the current and future formats of the map (including possibly reading from an entire new map).
+Other than the streaming API from the agent, this CFP introduces a dependency on the ipcache bpf map which isn't a stable API exposed to components beyond the agent. An e2e test for the toFQDN HA feature in CI will be added to catch such datapath changes impacting SDP. In order to support a safe upgrade path, SDP would need to support reading from the current and future formats of the map (including possibly reading from an entire new map).
