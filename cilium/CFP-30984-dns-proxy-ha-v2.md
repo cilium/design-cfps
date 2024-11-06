@@ -23,10 +23,11 @@ Users rely on toFQDN policies to enforce network policies against traffic to des
 * Introduce a streaming gRPC API for exchanging FQDN policy related information.
 * Introduce a standalone DNS proxy (SDP) that binds on the same port as built-in proxy with SO_REUSEPORT.
 * Enforce L7 DNS policy via SDP.
+* When an endpoint's DNS traffic is selected by an L7 policy, DNS requests and responses will be forwarded to their destinations via SDP even if cilium-agent is not running. So, clients re-resolving DNS to establish new connections will not be blocked anymore if the IP addresses from the new resolution are unchanged. Note that the L3/L4 policy for the resolved names should have already been plumbed when the agent was running.
 
 ## Non-Goals
 
-* Updating new DNS <> IP mappings when the agent is down.
+* Updating new DNS <> IP mappings when the agent is down is not in scope for this CFP. Solving for this scenario would likely be more involved and may require creation of a dedicated set of bpf maps. This will likely come with a performance penalty of having to perform multiple lookups. We will explore solutions for this in a future CFP.
 
 ## Proposal
 
@@ -96,7 +97,6 @@ message DNSPoliciesResult {
     string request_id = 2;
 }
 ```
-```
 
 ### Load balancing
 
@@ -129,4 +129,6 @@ SDP and agent's DNS proxy will run on the same port using SO_REUSEPORT. By defau
 
 ### Handling Upgrades
 
-Other than the streaming API from the agent, this CFP introduces a dependency on the ipcache bpf map which isn't a stable API exposed to components beyond the agent. An e2e test for the toFQDN HA feature in CI will be added to catch such datapath changes impacting SDP. In order to support a safe upgrade path, SDP would need to support reading from the current and future formats of the map (including possibly reading from an entire new map).
+Other than the streaming API from the agent, this CFP introduces a dependency on the ipcache bpf map which isn't a stable API exposed to components beyond the agent. An e2e test for the toFQDN HA feature in CI will be added to catch such datapath changes impacting SDP, giving us the opportunity to make necessary changes.
+
+When a new change is introduced to the ipcache bpf map, the userspace code to access data from ipcache needs to be refactored out into a library. This library would then be used in both the cilium agent and SDP. The library needs to support reading data from both old and new formats (we'll likely need to carry this for a couple of stable releases). This would mean that when upgrading to a new cilium version with updates to ipcache bpf map, SDP should always be upgraded first. This would allow SDP to seamlessly switch over to reading from the new ipcache map when the actual map migration is performed by cilium agent after it is upgraded. The actual heuristics to determine when to switch will depend on the nature of changes to the bpf map. Upgrading the cilium agent first would prevent SDP from reading ipcache data. So, the only supported upgrade order would be SDP first and then cilium agent.
