@@ -3,8 +3,7 @@
 **SIG: SIG-DATAPATH**
 **Begin Design Discussion: 2024-08-28**
 **Cilium Release:** 1.17
-**Authors:** Aleksander Mistewicz \<amistewicz@google.com\>
-**Contributors:** Katarzyna Łach \<katarzynalach@google.com\>
+**Authors:** Aleksander Mistewicz \<amistewicz@google.com\>, Katarzyna Łach \<katarzynalach@google.com\>
 
 ## Summary
 
