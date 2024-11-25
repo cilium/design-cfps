@@ -45,6 +45,7 @@ At the time of this writing, there are [14 algorithms](https://keepalived-pqa.re
 ## Non-Goals
 
 1. Add support for new (other than `maglev`/`random`) load-balancing algorithms
+2. Support migration without packet loss when enabling the mode to support this feature.
 
 ## Proposal
 
