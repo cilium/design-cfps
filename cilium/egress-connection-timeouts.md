@@ -247,7 +247,7 @@ Include a boolean field `custom_timeouts_specified `to specify whether custom co
 struct egress_gw_policy_entry {
 	__u32 egress_ip;
 	__u32 gateway_ip;
-__u8 custom_timeouts_specified;
+	__u8 custom_timeouts_specified;
 	__u32 policy_config_id;
 };
 ```
