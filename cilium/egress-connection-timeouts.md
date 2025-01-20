@@ -121,14 +121,7 @@ kind: CiliumEgressGatewayPolicy
 metadata:
   name: egress-sample
 spec:
-  connection-timeouts:
-bpf-ct-timeout-regular-any: 60
-bpf-ct-timeout-regular-tcp: 21600
-bpf-ct-timeout-regular-tcp-fin: 10
-bpf-ct-timeout-regular-tcp-syn: 60
-bpf-ct-timeout-service-any: 60
-bpf-ct-timeout-service-tcp: 21600
-bpf-ct-timeout-service-tcp-grace: 60
+  connection-timeout: 60
   ...      
 ```
 
@@ -143,24 +136,15 @@ This will need to be mirrored in Cilium’s internal representation of CEGP whic
 struct egress_gw_policy_entry {
 	__u32 egress_ip;
 	__u32 gateway_ip;
-	struct connection_timeouts;
+	__u32 connection_timeout;
 };
 
-struct connection_timeouts {
-__u32 ct_connection_lifetime_tcp;
-__u32 ct_connection_lifetime_nontcp;
-__u32 ct_service_lifetime_tcp;
-__u32 ct_service_lifetime_nontcp;
-__u32 ct_service_close_rebalance;
-__u32 ct_syn_timeout;
-__u32 ct_close_timeout;
-};
 ```
 
 
  
 
-In the case where `connection-timeouts `are not specified in CiliumEgressGatewayPolicy, we will populate the map values with the defaults stored in Cilium Config Map. 
+In the case where `connection-timeout` is not specified in CiliumEgressGatewayPolicy, we will populate the map value for connection timeout to be 0. This will result in the cilium-config defaults being used. 
 
 
 ## Modify the SNAT Datapath to Ingest and Update Custom Timeouts in Conntrack
@@ -200,11 +184,11 @@ With EGRESS_POLICY_MAP LPM Trie search being O(log N), Big O complexity in the a
 
 **Space:**
 
-We will be adding 4 bytes \* 7 fields = 28 bytes of memory to each entry in EGRESS_POLICY_MAP.
+We will be adding 4 bytes of memory to each entry in EGRESS_POLICY_MAP.
 
-This will **increase** the size of all existing EGRESS_POLICY_MAP by **140%**.
+This will **increase** the size of all existing EGRESS_POLICY_MAP by **25%**.
 
-With a default size of 16k entries, this will **add 448 KB of memory** overhead to each node in the default case. 
+With a default size of 16k entries, this will **add 64 KB of memory** overhead to each node in the default case. 
 
 <span style="text-decoration:underline;">This space overhead is considered acceptable in favor of the speed we gain with just doing one map lookup.</span>
 
@@ -238,18 +222,9 @@ We will be modifying the function signatures of these helpers, but default funct
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__type(key, __u32 policy_config_id);
-	__type(value, struct egress_connection_timeouts_val);
+	__type(value, __u32 egress_connection_timeouts_val);
 } EGRESS_CONNECTION_TIMEOUT_MAP __section_maps_btf;
 
-struct egress_connection_timeouts_val {
-__u32 bpf_ct_timeout_regular_any; 
-__u32 bpf_ct_timeout_regular_tcp; 
-__u32 bpf_ct_timeout_regular_tcp_fin; 
-__u32 bpf_ct_timeout_regular_tcp_syn; 
-__u32 bpf_ct_timeout_service_any; 
-__u32 bpf_ct_timeout_service_tcp; 
-__u32 bpf_ct_timeout_service_tcp_grace;
-};
 ```
 
 
@@ -318,5 +293,5 @@ EGRESS_POLICY_MAP:
 
 `EGRESS_CONNECTION_TIMEOUT_MAP`: New Map. 
 
- 4 bytes(map_type) + 8 bytes(key) + 4\*7 bytes(connection timeout values) = 40 bytes per entry
+ 4 bytes(map_type) + 8 bytes(key) + 4 bytes(connection timeout value) = 16 bytes per entry
 
