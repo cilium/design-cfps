@@ -1,6 +1,6 @@
 # CFP-TBD: Egress Connection Timeouts
 
-**SIG: SIG-POLICY**
+**SIG: SIG-DATAPATH, EGRESS-GATEWAY**
 
 **Begin Design Discussion:** 2024-01-16
 
