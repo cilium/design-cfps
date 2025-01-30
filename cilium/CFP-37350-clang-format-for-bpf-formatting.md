@@ -1,4 +1,4 @@
-# CFP-041: Clang-format for BPF formatting
+# CFP-37350: Clang-format for BPF formatting
 
 **SIG: SIG-Datapath**
 
