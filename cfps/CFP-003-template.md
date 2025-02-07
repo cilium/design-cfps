@@ -8,6 +8,8 @@
 
 **Authors:** alice <alice@example.com>, bob jones <bob@example.com>
 
+**Status:** Implementable, Released, Dormant, Declined
+
 ## Summary
 
 _Provide a high-level summary. Keep it short._
