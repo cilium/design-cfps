@@ -12,16 +12,16 @@
 
 Cilium’s current BGP implementation requires specifying the peer IP address in the BGP cluster configuration. In large-scale environments with thousands of Kubernetes nodes, managing distinct BGP configuration files (one per node) becomes impractical.
 
-This proposal offers a simpler alternative: rely on the IPv4 default gateway of ToR switches to automatically create BGP sessions when no peer IP is provided in the BGP cluster configuration.
+This proposal offers a simpler alternative: rely on the default gateway of ToR switches to automatically create BGP sessions when no peer IP is provided in the BGP cluster configuration.
 
 ## Motivation
 
-Large networks with thousands of Kubernetes nodes cannot feasibly manage the peer IP addresses of all ToR switches within numerous BGP cluster configurations. Allowing Cilium to automatically discover and use the IPv4 default gateway as the peer simplifies BGP session creation, reducing operational overhead and configuration complexity.
+Large networks with thousands of Kubernetes nodes cannot feasibly manage the peer IP addresses of all ToR switches within numerous BGP cluster configurations. Allowing Cilium to automatically discover and use the  default gateway as the peer simplifies BGP session creation, reducing operational overhead and configuration complexity.
 
 ## Goals
 
 ### Auto-Discovery of Peer IPs
-Allow Cilium to establish BGP sessions by discovering the IPv4 default gateway on the node, when no peer IP is explicitly provided in the BGP cluster configuration.
+Allow Cilium to establish BGP sessions by discovering the default gateway on the node, when no peer IP is explicitly provided in the BGP cluster configuration.
 ### Single Config File for All Nodes
 Enable large networks to use a generic BGP configuration file without needing to specify unique peer IP addresses on a per-node basis.
 
@@ -33,23 +33,34 @@ Enable large networks to use a generic BGP configuration file without needing to
 
 ### Overview
 
-At a high level, this proposal modifies how Cilium handles BGP peer IP configuration. If a user omits the peer IP for a BGP process, the Cilium agent attempts to retrieve the node’s IPv4 default gateway from statedb (which stores local routing information). Cilium can then use this default gateway as the peer IP to establish the BGP session. If the default gateway is not found, the agent skips the neighbor and logs an error for it.
+At a high level, this proposal modifies how Cilium handles BGP peer IP configuration. If a user omits the peer IP for a BGP process, the Cilium agent attempts to retrieve the node’s default gateway from statedb (which stores local routing information). Cilium can then use this default gateway as the peer IP to establish the BGP session. If the default gateway is not found, the agent skips the neighbor and logs an error for it.
 
 ### BGP Cluster Config
 
-If the user skips the peer ip for a bgp process, cilium agent should not return back an error when its creating new bgp sessions. It should first rely on statedb to get ipv4 default gateway. If not found, it should skip the neighbor and log an error.
+If the user skips the peer ip for a bgp process and enables auto discovery, cilium agent should not return back an error when its creating new bgp sessions. It should first rely on statedb to get default gateway. If not found, it should skip the neighbor and log an error.
+Every peer will have to specify the address family so that we fetch the default gateway for that address family
 
-### Routes from Statedb
+config proposal:
 
-cilium agent should rely on statedb to get the ipv4 default gateway to create the bgp session. we can inject statedb into neighbor reconcillation struct and when we loop through neighbors, we can populate the peer ip by looking for default gateway of 0.0.0.0/0 route in routes table of statedb.
+bgpInstances:
+  - name: "65001"
+    localASN: 65001
+    autoDiscovery: true
+    peers:
+    - name: "peer1 - 65000"
+      peerASN: 65000
+      afi: ipv4
+      peerConfigRef:
+        name: "cilium-peer"
+    - name: "peer2 - 65000"
+      peerASN: 65000
+      afi: ipv6
+      peerConfigRef:
+        name: "cilium-peer"
 
+In multi-homed environments (i.e., multiple default gateways leading to different ASNs), this proposal does not address which gateway belongs to which peer ASN.
 
-## Impacts / Key Questions
-
-### Impact 1: Multi-Homing Scenario
-
-In multi-homed environments (i.e., multiple default gateways leading to different ASNs), this proposal does not address which gateway belongs to which peer ASN. For example:
-
+example multi-homed config:
 bgpInstances:
   - name: "65001"
     localASN: 65001
@@ -63,58 +74,85 @@ bgpInstances:
       peerConfigRef:
         name: "cilium-peer"
 
-If multiple default gateways exist, we cannot reliably match them to different peer ASNs. One workaround is to specify local or remote interface names for each peer to ensure the correct gateway is used.
+If multiple default gateways exist, we cannot reliably match them to different peer ASNs. One workaround is to use same local ASN on both the ToRs for bgp sessions with the k8s node, and bgp cluster config will have one peer configured.
 
+proposed multi-homed config:
+bgpInstances:
+  - name: "65001"
+    localASN: 65001
+    peers:
+    - name: "65000"
+      peerASN: 65000
+      afi: ipv4
+      peerConfigRef:
+        name: "cilium-peer"
+
+proposed config in the device (arista):
+bgp listen range 10.2.0.0/24 peer-group SERVERS remote-as 65001
+router bgp 65100
+   router-id 10.1.1.1
+   timers bgp 1 3
+   neighbor SERVERS local-as 65000 no-prepend replace-as
+
+
+### Routes from Statedb
+
+cilium agent should rely on statedb to get the default gateway to create the bgp session. we can inject statedb into neighbor reconcillation struct and when we loop through neighbors, we can populate the peer ip by looking for default gateway of 0.0.0.0/0 or ::0/0 route in routes table of statedb.
+
+
+## Impacts / Key Questions
+
+### Impact 1: Multi-Homing Scenario
+
+In multi-homed environments, we will be breaking the design of one peer per bgp session because we will create two bgp sessions with one peer defined in the config. One of the workarounds could be to define two peers with same config and a unique name.
 
 ### Key Question
 
-Is there a way to identify which default gateway should be used for a specific BGP peer ASN in a multi-homed environment without requiring manual configuration?
+Is there a different way to accomplish this?
 
 
 ### Impact 2: Multiple BGP Instances
 
-If the user does not provide peer IP when multiple bgp instances are configured, the proposal  cannot assign the correct default gateway to a peer of a bgp process
+The proposal does not take into account multiple bgp instances so auto-discovery will work in that case.
 
 ### Key Question
 
-Should the system return an error if the user omits peer IPs when multiple BGP processes are defined?
+What are use-cases of having multiple bgp instances? (bgp instances is a list in config)
 
-### Impact 3: Dual-Stack (IPv4 and IPv6)
+### Impact 3: config knob for auto-discovery
 
-If the user wants to create a v4 and v6 bgp session (dual stack) without providing the peer ip, the proposal will not work because the system assumes that the user will leverage IPv4 bgp session to send both v4/v6 traffic.
+config knob to enable auto-discovery will be crucial because that enables the users to understand the dependencies before making the changes. We can have documentation for auto-discover and provide the pre-requisites for enabling it.
+Without the knob, the user may use auto-discovery without understanding the requirements for it.
 
 ### Key Question
 
-Should we stick IPv4 session for this proposal or should we create both v4 and v6 and have a config knob incase the user wants to disable any of the address families?
+are we okay to add a knob for auto-discovery or should we enable auto-discovery by default if peerAddress is not specified?
 
 
 ### Option 1:
 
-When the peer IP is absent and there is exactly one peer, use the discovered IPv4 default gateway to create a single BGP session.
+If the user wants to create bgp sessions without specifying peerAddress, the user will remove peerAddress field, enable auto-discovery in the config and add ipv4 and/or ipv6 peers explicitly with "afi" field
 
 #### Pros
 
-Simple implementation
-Significantly reduces configuration overhead
+Adds flexibility to create ipv4 and/or ipv6 sessions.
+auto-discovery field will help users to understand the requirements provided in the documentation before using it. (User can obviously enable it without knowing the requirements, but, we can error out with clear error messages)
 
 #### Cons
 
-Does not cover multi-homed networks or multiple peers.
-Does not handle IPv6 or dual-stack scenarios.
+For multi-homed environments, it deviates from the current "one bgp session per configured peer" design if we decide to use only one bgp peer for both sessions.
 
 ### Option 2:
 
-If both IPv4 and IPv6 default gateways are present and a single peer is defined without a peer IP, create two BGP sessions (IPv4 and IPv6). Provide configuration knobs to disable any undesired address families.
+do nothing
 
 #### Pros
 
-Adds flexibility for dual-stack environments.
-Reduces the need for separate peer IP configurations for IPv4 and IPv6 by skipping the peer ip config
+
 
 #### Cons
 
-Deviates from the current "one bgp session per configured peer" design.
-Still does not address multi-homed or multiple-peer scenarios.
+User will have to manage bgp cluster files for all the k8s nodes and updates to these files can be cumbersome
 
 ## Future Milestones
 
