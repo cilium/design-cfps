@@ -87,19 +87,17 @@ at any time if there is interest in the project. The next step for a dormant CFP
 
 Need more clarification? Here are a list of resources from the Cilium community, and some FAQs on how to get more involved! Can't find your answer here? Please reach out on the Cilium Slack [#development](https://cilium.slack.com/archives/C2B917YHE) for other questions.
 
-### FAQs
+## FAQs
 
-<details>
-<summary>Who can review a CFP?</summary>
-    Anyone can leave a helpful review on a CFP! Questions, ideas, and points of clarification that can help refine a CFP are greatly appreciated.
-</details>
+### Who can review a CFP?
 
-<details>
-<summary>Who can approve a CFP?</summary>
-    Any [committer](https://github.com/cilium/cilium/blob/main/MAINTAINERS.md) can approve a CFP.
-</details>
+Anyone can leave a helpful review on a CFP! Questions, ideas, and points of clarification that can help refine a CFP are greatly appreciated.
 
-<details>
-<summary>How can I gauge interest on my CFP?</summary>
-    To get preliminary feedback on your CFP, attend a Cilium weekly [community meeting](https://docs.cilium.io/en/stable/community/community/#community-meetings) or ask on the Cilium Slack . If possible, ask in the relevant [SIG](https://docs.cilium.io/en/stable/community/community/#special-interest-groups) slack channel or meeting.
-</details>
+### Who can approve a CFP?
+
+Any [committer](https://github.com/cilium/cilium/blob/main/MAINTAINERS.md) can approve a CFP.
+
+### How can I gauge interest on my CFP?
+
+To get preliminary feedback on your CFP, attend a Cilium weekly [community meeting](https://docs.cilium.io/en/stable/community/community/#community-meetings) or ask on the Cilium Slack . If possible, ask in the relevant [SIG](https://docs.cilium.io/en/stable/community/community/#special-interest-groups) slack channel or meeting.
+
