@@ -29,7 +29,7 @@ Modifying CiliumEgressPolicy to include an optional timeout field would allow us
 
 
 
-*   Allow users to specify egress IPv4 connection timeouts via CiliumEgressGatewayPolicy.
+*    Allow users to specify egress IPv4 connection timeouts via CiliumEgressGatewayPolicy.
 *    Allow for back-compatibility with cilium-config default timeouts.
 
 
