@@ -134,10 +134,6 @@ spec:
 
 This will need to be mirrored in Cilium’s internal representation of CEGP which is [PolicyMap](https://source.corp.google.com/h/gke-internal/third_party/cilium/+/master:pkg/maps/egressmap/policy.go;drc=2c8979e71bcc00b0135735334b71cce832554a3d;bpv=1;bpt=1;l=59?q=PolicyConfig&sq=repo:gke-internal%2Fthird_party%2Fcilium%20branch:master).
 
-The custom field within the custom timeouts configuration offers a mechanism for advanced users to inject specific, implementation-defined settings for Connection Tracking (CT). This field accepts arbitrary text, which the agent can interpret as a set of parameters specific to the currently running Cilium version. This approach allows for fine-grained control over CT behavior for power users who have a deep understanding of the underlying system. By keeping these advanced settings outside of the formal API, we gain flexibility to evolve and potentially rework CT parameters in future Cilium versions without introducing breaking API changes.
-
-It is crucial to understand that utilizing this custom field signifies an acceptance of risk. Users who delve into these implementation details are expected to (a) fully acknowledge and bear the responsibility for any instability or unexpected behavior resulting from their custom configurations, and (b) proactively monitor upstream Cilium development for changes in these settings. Furthermore, these power users are encouraged to actively participate in the Cilium community, providing feedback on their experiences and helping to guide the evolution of these advanced options. While we will strive to release-note any modifications to the interpretation of this field, there are fewer guarantees regarding the stability and compatibility of these settings across different Cilium versions. Strong and consistent feedback from multiple users regarding the utility and effectiveness of specific custom settings may lead to their consideration for formal inclusion in future API revisions.
-
 
 ## Add Timeouts Field to Existing BPF EGRESS_POLICY_MAP
 
