@@ -40,7 +40,7 @@ Modifying CiliumEgressPolicy to include an optional timeout field would allow us
 *   Modify connection timeouts for non-egress traffic.
 *   Modify connection timeouts at a more granular level than CiliumEgressGatewayPolicy, i.e. per egress connection.
 *   Modify egress connection timeouts for IPv6 traffic.
-
+* Commit to stable API for timeout configuration in CEGP
 
 # Proposal
 
