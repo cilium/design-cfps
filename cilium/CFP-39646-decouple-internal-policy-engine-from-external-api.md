@@ -1,4 +1,4 @@
-# CFP-003: Template
+# CFP-39646: Decouple internal policy engine from external API
 
 **SIG: SIG-Policy** 
 
