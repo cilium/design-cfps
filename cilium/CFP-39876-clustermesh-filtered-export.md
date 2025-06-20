@@ -30,19 +30,21 @@ The existing Cilium Clustermesh implementation distributes all endpoints and ide
 - services=0
 - services-qps=0
 
-By restricting distribution to only those resources backing global services, we can achieve substantial scalability improvements and operational efficiency gains. The gains in compute from the proposed optimization would also ensure that customers can run multiple replicas of the Clustermesh APIserver which is recommended for production workloads.
+By restricting distribution to only those resources backing global services, we can achieve substantial scalability improvements and operational efficiency gains. The gains in compute from the proposed optimization would also ensure that customers can run multiple replicas of the Clustermesh APIserver which is recommended for production workloads. An important consideration for using this new "scoped-export" mode is that global service backends are exported to clusters backend. This implies that the memory and compute optimizations might be suboptimal if the cluster has most of the endpoints fronted by global services. 
 
 ## Goals
 
 - Enhance Cilium Clustermesh scalability through selective endpoint and identity distribution
 - Maintain cross-cluster visibility for endpoints and identities associated with global services
 - Service to Service connection and network policies
+- Global Service to Global Service network policies and connectivity support 
 
 ## Non-Goals
 
 - Direct inter-cluster endpoint access for resources not backed by global services
 - Cross-cluster network policy enforcement
 - Pod to Pod or Pod to service connection or Network Policy
+- Network Policy support beyond Global Service scope 
 
 ## Proposal
 
@@ -98,6 +100,18 @@ The ClusterMesh API server filters resources before exporting to etcd. Only thos
 #### Supported Resource Types
 
 The filter applies to CiliumEndpoint, CiliumIdentity, and CiliumEndpointSlice. Only annotated resources are exported to be shared cross clusters.
+
+### Alternative Approach1
+
+#### Add IPtoSvc and IdentityToIP cache in Clustermesh APIserver 
+
+Since clustermesh-apiserver already has watches setup on CiliumIdentities and CiliumEndpoints, we can maintain mappings of IPtoSvc and IdentityToIP caches which can provide answers to the following questions while processing each service event, ciliumendpoint event or ciliumidentityevent. To join ciliumidentity and ciliumendpoint information, we also need to maintain ipcache of ciliumendpoints  
+
+- Is a CiliumEndpoint fronted by global service?
+- Is a CiliumIdentity referenced by a ciliumendpoint fronted by global service?
+
+The main challenge in this method is requirement to store all ciliumendpoints in memory 
+ 
 
 ## Future Milestones
 
