@@ -35,71 +35,37 @@ By restricting distribution to only those resources backing global services, we 
 ## Goals
 
 - Enhance Cilium Clustermesh scalability through selective endpoint and identity distribution
-- Maintain cross-cluster visibility for endpoints and identities associated with global services
-- Service to Service connection and network policies
-- Global Service to Global Service network policies and connectivity support 
+- Network policies only work for "allowlisted" namespaces
+- Endpoint to Endpoint connectivity only work for "allowlisted" namespaces
+- Global service functionality only work for "allowlisted" namespaces
 
 ## Non-Goals
 
-- Direct inter-cluster endpoint access for resources not backed by global services
-- Cross-cluster network policy enforcement
-- Pod to Pod or Pod to service connection or Network Policy
-- Network Policy support beyond Global Service scope 
+- Network policies for non "allowlisted" namespaces
+- Endpoint to Endpoint connectivity for "allowlisted" namespaces
+- Global service functionality for "allowlisted" namespaces
 
 ## Proposal
 
 ### Implementation details
 
-We intend to add a new cache in conjunction to the Service cache that exists both in the cilium agent as well as the operator. We intend to provide a new config in the cilium agent configmap called scoped-export which is by default set to false. Upon setting this config, the agent and the operator will annotate the CiliumEndpoint, CiliumEndpointSlice and CiliumIdentity CRDs with internal annotation allowlisting them for export to etcd. A change in scope–export config would require restart of cilium agent and operator components for the changes to take effect.
+We intend to only export ciliumendpoints and ciliumidentities for "allowlisted" namespaces when the clustermesh-apiserver runs in "scoped-export" mode. This new mode has three configs which the clustermesh-apiserver imports from cilium configmap namely 
+- scoped-export-enabled - Enable the scoped export mode 
+- scoped-export-namespaces - List of namespaces that are "allowlisted for export". The ciliumendpoints and ciliumidentities inside the allowlisted namespaces are exported to remote clusters. 
+- allow-by-default - Allowlisting method. If set to true, all namespaces are disabled for export until explicitly exported using the allowlisted-namespaces configs. If set to false,  ciliumendpoints and identities under all namespaces are enabled for export by default until mentioned under the scoped-export-namespaces. 
 
-### Global Service Backend Cache
+An important part of this implementation is the functioning of network policies. In tunnel mode, the identitiy information is embedded in the network packet itself whereas in native routing mode, the identity information at the destination is derieved through the destination cluster's ipcache. Due to this descrepancy, if an identity is not exported and has associated network policies, the policies will be enforced in tunnel mode whereas they will not be honored in native mode if the identity is not exported since the identity is inferred as world at the destination due to the entry missing in the ipacache. As a result, for the network policies to work as expected, in the scoped export mode, network policies would only be honored for identities and endpoints created under `scoped-export-namespaces`.  Theoretically, the network policy descrepeancy would only occur for native routing mode but we intend to provide a consistent product expreience and communicate non support for all routing modes in non allowlisted namespaces. We can provide updated documentation providing destination identity values for different routing modes but the network policy enforcement is only supported for workloads under scoped-export namespaces. 
+Similarly for Global Service implementation, since only the clients under allowlisted namespaces are enabled for cross cluster export, all services under `scoped-export-namespaces` are global by default and customers cannot create global services under non allowlisted namespaces.  
 
-#### Implementation Location
-
-The global service backend cache is implemented in both the Cilium Agent and Operator and works in conjunction with the ServiceCache. The cache resides both in the agent and operator maintaining a synchronized copy of global service backend endpoint IPs.
-The cache maps backend IP addresses to metadata including service name and namespace
-
-#### Cache Management
-
-The cache is populated via service endpoint updates and receives live updates when backends change. Stale entries are automatically cleaned up, and synchronization mechanisms ensure the global service endpoint cache contains the latest copy of backend endpoint ips. Both Cilium Agent and Cilium Operator already listen to existing Service Events. These events are consumed to populate the global service backend IP cache. 
-
-### Cilium Agent Changes
-
-#### Service Cache Extension
-
-The agent's existing service cache is extended to support lookup for ips against global services.
-
-#### CiliumEndpoint Reconciliation
-
-Every 10 seconds, the agent checks each CiliumEndpoint IP against the global backend cache. If matched, it adds an internal annotation to mark it as a global backend; otherwise, it removes the annotation. This annotation is internal and not user-modifiable.
-
-#### CiliumIdentity Reconciliation
-
-When managing CiliumIdentities, the agent listens for global service IP cache events. On upserts or deletions, it reconciles the relevant identities and updates their annotations accordingly.
-
-### Cilium Operator Changes
-
-#### Service Cache Extension
-
-The agent's existing service cache is extended to support lookup for ips against global services.
-
-#### CiliumIdentity Handling
-
-If the operator manages CiliumIdentities, it responds to global service events from its cache and performs reconciliation to add or remove internal annotation as needed.
-
-#### CiliumEndpointSlice Controller Updates
-
-The controller, which already watches CiliumEndpoint resources, is updated to check for the global backend annotation. If present, it adds a corresponding annotation to the CiliumEndpointSlice. Annotation changes are tracked and updated accordingly.
 
 ### ClusterMesh API Server Changes
 
 #### Export Filtering
-
-The ClusterMesh API server filters resources before exporting to etcd. Only those with the internal global backend annotation are shared for cross-cluster visibility.
+If the scoped export mode is enabled, only the ciliumendpoints and ciliumidentities under the allowlisted namespaces will be exported to the remote clusters. 
 
 #### Supported Resource Types
-
-The filter applies to CiliumEndpoint, CiliumIdentity, and CiliumEndpointSlice. Only annotated resources are exported to be shared cross clusters.
+- CiliumEndpoints 
+- CiliumIdentities 
 
 ### Alternative Approach1
 
@@ -112,13 +78,20 @@ Since clustermesh-apiserver already has watches setup on CiliumIdentities and Ci
 
 The main challenge in this method is requirement to store all ciliumendpoints in memory 
  
+ ### Alternative Approach2
+
+#### Update CiliumEndpoint, CiliumIdentity and CiliumEndpointSlice controllers 
+Update the CRD controllers to internally annotate CiliumEndpoints, CiliumIdentities and CiliumEndpointSlices associated with 
+- Pods that are annotated by the customer 
+- Endpoints behind global services 
+
+Once the annotations are added in the CRD controllers in Cilium Agent/Operator, the Clustermesh APIserver can filter out the non annotated CRDs and prevent them from being exported
+
+### Alternate approaches 
+A detailed breakdown of alternate approaches can be found in [this](https://docs.google.com/document/d/1GN5PYM40upeYpuriBZheSv2VWrAwA7WpBEqDb7EAv7w/edit?tab=t.0) document
 
 ## Future Milestones
 
-### Dynamic Export Scope Configuration
+### Pod level allowlisting 
+The current implementation supports namespace grain allowlisting. In future, we would like to move to a more finer Pod level annotations
 
-Introduce support for dynamic configuration of export scope per namespace or pod label. This would allow operators to fine-tune which endpoints and identities are shared across clusters beyond just global service association.
-
-### Policy-Aware Export Filtering
-
-Integrate network policy awareness into the export decision logic. Endpoints and identities could be exported based on whether they are referenced in cross-cluster network policies, even if not fronted by a global service.
