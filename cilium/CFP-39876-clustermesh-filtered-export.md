@@ -97,3 +97,5 @@ A detailed breakdown of alternate approaches can be found in [this](https://docs
 ### Pod level allowlisting 
 The current implementation supports namespace grain allowlisting. In future, we would like to move to a more finer Pod level annotations
 
+### Network policy support for non allowlisted namespaces 
+Support network policies for non allowlisted namespaces
