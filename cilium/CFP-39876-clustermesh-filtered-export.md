@@ -38,13 +38,15 @@ By restricting distribution to only those resources backing global services, we 
 - Network policies only work for "allowlisted" namespaces
 - Endpoint to Endpoint connectivity only work for "allowlisted" namespaces
 - Global service functionality only work for "allowlisted" namespaces
+- Support scoped export for CRD mode identities
 
 ## Non-Goals
 
 - Network policies for non "allowlisted" namespaces
 - Endpoint to Endpoint connectivity for "allowlisted" namespaces
 - Global service functionality for "allowlisted" namespaces
-
+- Scoped export for non CRD modes of identity allocation 
+- 
 ## Proposal
 
 ### Implementation details
