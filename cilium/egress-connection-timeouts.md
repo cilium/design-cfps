@@ -4,7 +4,7 @@
 
 **Begin Design Discussion:** 2024-01-16
 
-**Cilium Release:** X.XX
+**Cilium Release:** 1.19
 
 **Authors:** Murari Bhimavarapu <murarib@google.com>
 
