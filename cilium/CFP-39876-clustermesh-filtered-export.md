@@ -54,20 +54,8 @@ Full support for **cross-cluster communication** and **network policy enforcemen
 
 ### Behavior When Pods Are Not in Global Namespaces
 
-If either the source or the destination pod does **not** belong to a global namespace, cross-cluster communication **may still succeed**, but **only in the absence of applicable network policies**. The presence of network policies introduces stricter constraints, as described below:
+If either the source or the destination pod does **not** belong to a global namespace, cross-cluster communication **may still succeed**, but under certain conditions although we do not support as part of the new mode. The presence of network policies introduces stricter constraints, as described below:
 
-#### Ingress Policies
-If a destination pod is selected by an **ingress policy**, and the **source pod is not part of a global namespace**, the traffic will be **dropped**.
-
-- **Exception**: If the ingress policy explicitly allows `from-world` traffic, the traffic **may be allowed**.
-
-#### Egress Policies
-If a source pod is selected by an **egress policy**, and the **destination pod is not part of a global namespace**, the traffic will be **dropped**.
-
-- **Exception**: If the egress policy explicitly allows `to-world` traffic, the traffic **may be allowed**.
-
-## Global Service Support
-In the scoped-export mode, all services within global services would automatically be marked as "global". Customers are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
 
 ### Summary of Enforcement Logic
 
@@ -80,6 +68,9 @@ In the scoped-export mode, all services within global services would automatical
 | Any                     | Any                           | No Policies             | ✅ Allowed (no restrictions) |
 
 Even though the policies work for tunnel routing mode, for consistency in customer experience, we do not provide support for network policies for workloads outside global namespaces. 
+
+## Global Service Support
+In the scoped-export mode, all services within global services would automatically be marked as "global". Customers are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
 
 ## Proposal
 
