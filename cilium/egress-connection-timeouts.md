@@ -45,51 +45,11 @@ Modifying CiliumEgressPolicy to include an optional timeout field would allow us
 # Proposal
 
 
-<table>
-  <tr>
-   <td style="background-color: #efefef">
-   </td>
-   <td style="background-color: #efefef">Option 1. Custom Conntrack Timeout
-   </td>
-   <td style="background-color: #efefef">Option 2. Timeout at Node Level
-   </td>
-   <td style="background-color: #efefef">Option 3. Timeout at Socket Level
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">Engineering Investment
-   </td>
-   <td style="background-color: #ffe599">Modify SNAT Datapath and conntrack creation to ingest and write custom timeouts to egress nat conntrack entries. 
-   </td>
-   <td style="background-color: #b6d7a8">Watch CEGP and modify CiliumNodeConfig for the respective gateway node
-   </td>
-   <td style="background-color: #ea9999"> New bpf program to hook into sockopt syscall event
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">Flexibility
-   </td>
-   <td style="background-color: #b6d7a8">Granularity can be achieved at the CEGP level
-   </td>
-   <td style="background-color: #ea9999">Can only achieve granularity at the node or cluster level, not by CEGP
-<p>
-   </td>
-   <td style="background-color: #b6d7a8">Granularity can be achieved at the CEGP level
-   </td>
-  </tr>
-  <tr>
-   <td style="background-color: null">Performance/
-<p>
-Maintainability
-   </td>
-   <td style="background-color: #b6d7a8">Add minimal latency to the SNAT Datapath and space to BPF Maps. Cilium agent can continue to run without restart.
-   </td>
-   <td style="background-color: #ffe599">Write to CiliumNodeConfig is cheap but cilium agent will need to be restarted
-   </td>
-   <td style="background-color: #ea9999">Cilium agent pods can continue to run unchanged but the bpf program and map lookup will be called on every new socket, not just egress nat sockets.
-   </td>
-  </tr>
-</table>
+| | Option 1. Custom Conntrack Timeout | Option 2. Timeout at Node Level | Option 3. Timeout at Socket Level |
+|---|---|---|---|
+| Engineering Investment | Modify SNAT Datapath and conntrack creation to ingest and write custom timeouts to egress nat conntrack entries. | Watch CEGP and modify CiliumNodeConfig for the respective gateway node | New bpf program to hook into sockopt syscall event |
+| Flexibility | Granularity can be achieved at the CEGP level | Can only achieve granularity at the node or cluster level, not by CEGP | Granularity can be achieved at the CEGP level |
+| Performance/ Maintainability | Add minimal latency to the SNAT Datapath and space to BPF Maps. Cilium agent can continue to run without restart. | Write to CiliumNodeConfig is cheap but cilium agent will need to be restarted | Cilium agent pods can continue to run unchanged but the bpf program and map lookup will be called on every new socket, not just egress nat sockets. |
 
 
 **Option 1. Custom Conntrack Timeout** was chosen as it minimizes impact on existing datapath while offering the best blend of flexibility and performance. 
@@ -142,6 +102,8 @@ This will need to be mirrored in Cilium’s internal representation of CEGP whic
 struct egress_gw_policy_entry {
 	__u32 egress_ip;
 	__u32 gateway_ip;
+	__u8 custom_timeouts_set:1,
+	     reserved:7;
 	struct connection_timeouts;
 };
 
@@ -154,7 +116,7 @@ struct connection_timeouts {
 ```
  
 
-In the case where `connection-timeout` is not specified in CiliumEgressGatewayPolicy, we will populate the struct values for connection timeouts to be 0. This will result in the cilium-config defaults being used. 
+In the case where `connection-timeout` is not specified in CiliumEgressGatewayPolicy, the `custom_timeouts_set` flag in the policy entry will not be set. This will result in the cilium-config defaults being used. 
 
 
 ## Modify the SNAT Datapath to Ingest and Update Custom Timeouts in Conntrack
