@@ -70,22 +70,52 @@ If either the source or the destination pod does **not** belong to a global name
 Even though the policies work for tunnel routing mode, for consistency in customer experience, we do not provide support for network policies for workloads outside global namespaces. 
 
 ## Global Service Support
-In the scoped-export mode, all services within global services would automatically be marked as "global". Customers are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
+In the scoped-export mode, all services within global namespaces would automatically be marked as "global". Customers are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
 
-## Proposal
 
 ### Implementation details
 
-We intend to only export ciliumendpoints and ciliumidentities for global namespaces when the clustermesh-apiserver runs in "scoped-export" mode. This new mode has three configs which the clustermesh-apiserver imports from cilium configmap namely 
-- scoped-export-enabled - Enable the scoped export mode 
-- global-namespaces - List of global namespaces allowlisted/denylisted for resource export. Upon mutating this resource, a pod restart is required since we do not have mechanism to backfill newly added global namespaces 
-- allow-by-default - Allowlisting method. If set to true, all namespaces are disabled for export until explicitly exported using the allowlisted-namespaces configs. If set to false,  ciliumendpoints and identities under all namespaces are enabled for export by default until mentioned under the `global-namespaces`. 
+#### Allow/Deny listing namespace
+To allowlist a namespace and mark it as global, customers can annotate the namespace with:
 
+```
+namespace.cilium.io/global: "true"
+```
+
+The ClusterMesh API server will watch namespace resources. Adding this annotation to any namespace will result in the following steps:
+
+- A full synchronization is triggered 
+- Only entries associated with namespaces explicitly annotated as global will be exported.
+- Entries in etcd that do not belong to any global (allowlisted) namespace will be deleted.
+- All unannotated namespaces or entries with denied annotations are implicitly treated as non-global and excluded from export.
+
+To explicitly denylist a namespace, customers can annotate it with:
+
+```
+namespace.cilium.io/local: "true"
+```
+
+This explicitly marks all unannotated namespaces as global and marks the annotated services as local. Note that if both global and local annotations are present on different namespaces, the behaviour is to mark all unannotated namespaces as local(The global annotation has higher priority). Hence, to explicitly mark the unannotated services as global, customers need to ensure that no namespace is explictly marked global in their cluster. Logically, since marking a namespace as global marks all other namespaces as local, customers should not be using both the annotations for any cluster. To summarize behavior with deny annotation
+
+- A full synchronization is triggered 
+- Only entries associated with namespaces explicitly annotated with the value `false` will be skipped from the export provided no other namespace has the global annotation.
+- Entries will be added in etcd for unannotated namespaces provided no other namespaces has the global annotation.
+- All unannotated namespaces are exported unless no other namespace has the global annotation. 
+
+When the annotation is removed or disabled for a namespace:
+- A full synchronization is triggered.
+- The system exports the CiliumEndpoints and CiliumIdentities with the updated list of global namespaces
+- If no namespaces remain annotated post removal of the annotations, the behavior defaults to the existing behavior of the `clustermesh-apiserver`.
+
+#### Network Policies 
 An important part of this implementation is the functioning of network policies. In tunnel mode, the identitiy information is embedded in the network packet itself whereas in native routing mode, the identity information at the destination is derieved through the destination cluster's ipcache. Due to this descrepancy, if an identity is not exported and has associated network policies, the policies will be enforced in tunnel mode whereas they will not be honored in native mode if the identity is not exported since the identity is inferred as world at the destination due to the entry missing in the ipacache. As a result, for the network policies to work as expected, in the scoped export mode, network policies would only be honored for identities and endpoints created under `global-namespaces`.  Theoretically, the network policy descrepeancy would only occur for native routing mode but we intend to provide a consistent product expreience and communicate non support for all routing modes in non global(local) namespaces. We can provide updated documentation providing destination identity values for different routing modes but the network policy enforcement is only supported for workloads under scoped-export namespaces. 
 Similarly for Global Service implementation, since only the clients under global namespaces are enabled for cross cluster export, all services under `global-namespaces` are global by default and customers cannot create global services under non global(local) namespaces.  
 
 
 ### ClusterMesh API Server Changes
+
+#### Process annotations 
+We will add new watch on namespaces to check for global or local annotations and maintain internal sets for the same. Once we have the list, we will trigger a full sync operation to update the export based on the provided annotation. 
 
 #### Export Filtering
 If the scoped export mode is enabled, only the ciliumendpoints and ciliumidentities under global namespaces will be exported to the remote clusters. 
