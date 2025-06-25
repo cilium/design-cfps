@@ -72,6 +72,8 @@ Even though the policies work for tunnel routing mode, for consistency in custom
 ## Global Service Support
 In the scoped-export mode, all services within global namespaces would automatically be marked as "global". Customers are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
 
+## MCS support
+Similar to global services, MCS support is only available for services created under global namespaces. 
 
 ### Implementation details
 
@@ -108,8 +110,11 @@ When the annotation is removed or disabled for a namespace:
 - If no namespaces remain annotated post removal of the annotations, the behavior defaults to the existing behavior of the `clustermesh-apiserver`.
 
 #### Network Policies 
-An important part of this implementation is the functioning of network policies. In tunnel mode, the identitiy information is embedded in the network packet itself whereas in native routing mode, the identity information at the destination is derieved through the destination cluster's ipcache. Due to this descrepancy, if an identity is not exported and has associated network policies, the policies will be enforced in tunnel mode whereas they will not be honored in native mode if the identity is not exported since the identity is inferred as world at the destination due to the entry missing in the ipacache. As a result, for the network policies to work as expected, in the scoped export mode, network policies would only be honored for identities and endpoints created under `global-namespaces`.  Theoretically, the network policy descrepeancy would only occur for native routing mode but we intend to provide a consistent product expreience and communicate non support for all routing modes in non global(local) namespaces. We can provide updated documentation providing destination identity values for different routing modes but the network policy enforcement is only supported for workloads under scoped-export namespaces. 
-Similarly for Global Service implementation, since only the clients under global namespaces are enabled for cross cluster export, all services under `global-namespaces` are global by default and customers cannot create global services under non global(local) namespaces.  
+An important part of this implementation is the functioning of network policies. In tunnel mode, the identitiy information is embedded in the network packet itself whereas in native routing mode, the identity information at the destination is derieved through the destination cluster's ipcache. Due to this descrepancy, if an identity is not exported and has associated network policies, the policies will be enforced in tunnel mode whereas they will not be honored in native mode if the identity is not exported since the identity is inferred as world at the destination due to the entry missing in the ipacache. As a result, for the network policies to work as expected, in the scoped export mode, network policies would only be honored for identities and endpoints created under global namespaces.  Theoretically, the network policy descrepeancy would only occur for native routing mode but we intend to provide a consistent product expreience and communicate non support for all routing modes in non global(local) namespaces. We can provide updated documentation providing destination identity values for different routing modes but the network policy enforcement is only supported for workloads under scoped-export namespaces. 
+
+
+#### MCS API 
+We would not crete ServiceExport CRDs for local namespaces. This would inturn prevent the corresponding ServiceImport CRDs from being created in the remote clusters. Since we support transition to scoped-export mode without restarting the pods, it is possible that the CRDs might have been created before the customers annotate their namespaces. We would not provide support for the functionality in local namespaces even if the CRDs exist.  
 
 
 ### ClusterMesh API Server Changes
@@ -119,6 +124,9 @@ We will add new watch on namespaces to check for global or local annotations and
 
 #### Export Filtering
 If the scoped export mode is enabled, only the ciliumendpoints and ciliumidentities under global namespaces will be exported to the remote clusters. 
+
+#### ServiceExport controller 
+Provide warning message when a ServiceExport is triggered for a service residing in local namespace 
 
 #### Supported Resource Types
 - CiliumEndpoints 
