@@ -100,11 +100,11 @@ This will need to be mirrored in Cilium’s internal representation of CEGP whic
 
 ```
 struct egress_gw_policy_entry {
-	__u32 egress_ip;
-	__u32 gateway_ip;
-	__u8 custom_timeouts_set:1,
-	     reserved:7;
-	struct connection_timeouts;
+	__u32  egress_ip;
+	__u32  gateway_ip;
+	struct connection_timeouts timeouts;
+	__u8   custom_timeouts_set:1,
+	       reserved:7;
 };
 
 struct connection_timeouts {
