@@ -44,7 +44,7 @@ By restricting export to only resources under global namespaces, we can achieve 
 - Scoped export for non CRD modes of identity allocation 
  
 ## Network Policy Support 
-# Cross-Cluster Communication and Network Policy Behavior
+### Cross-Cluster Communication and Network Policy Behavior
 
 Full support for **cross-cluster communication** and **network policy enforcement** is available **only when both the source (client) and destination (server) pods**—which may optionally be accessed via a service—**are part of a _global namespace_**.
 
@@ -69,10 +69,10 @@ In the scoped-export mode, all services within global namespaces would automatic
 ## MCS support
 Similar to global services, MCS support is only available for services created under global namespaces. 
 
-### Implementation details
+## Implementation details
 
 The proposed scoped-export mode has a config that users can pass in to mark all non local annotated namespaces as global. 
-- scoped-export-default-enable - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
+- scoped-export-default-enabled - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
 
 #### Allow/Deny listing namespace
 To allowlist a namespace and mark it as global, users can annotate the namespace with:
