@@ -1,6 +1,6 @@
 # CFP-39876: Scoped Export Mode for ClusterMesh
 
-**SIG:** SIG-NAME
+**SIG:** SIG-ClusterMesh
 
 **Sharing:** Public
 
@@ -64,7 +64,7 @@ If either the source or the destination pod does **not** belong to a global name
 | Any                     | Any                           | No Policies             | ✅ Allowed (no restrictions) |
 
 ## Global Service Support
-In the scoped-export mode, all services within global namespaces would automatically be marked as "global". Users are not required to explicitly annotate individual services. Also, a service which is annotated as global but does not reside in a global namespaces would no longer be global.  
+In the scoped-export mode, all services within global namespaces would automatically be marked as global/local depending on the provided annotation on the namespace. Users are not required to explicitly annotate individual services. Any service which is not inside a global namespace is considered local even if it has an associated global annotation. Such a service will not share backends with remote clusters in any case.  
 
 ## MCS support
 Similar to global services, MCS support is only available for services created under global namespaces. 
