@@ -2,7 +2,7 @@
 
 **SIG: SIG-DATAPATH, EGRESS-GATEWAY**
 
-**Begin Design Discussion:** 2024-01-16
+**Begin Design Discussion:** 2025-01-16
 
 **Cilium Release:** 1.19
 
