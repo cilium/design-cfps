@@ -72,7 +72,7 @@ Similar to global services, MCS support is only available for services created u
 ## Implementation details
 
 The proposed scoped-export mode has a config that users can pass in to mark all non local annotated namespaces as global. 
-- scoped-export-default-enabled - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
+- clustermesh-default-global-namespace - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
 
 #### Allow/Deny listing namespace
 To allowlist a namespace and mark it as global, users can annotate the namespace with:
@@ -85,7 +85,7 @@ The ClusterMesh API server will watch namespace resources. Adding this annotatio
 
 - A full synchronization is triggered for all resources within the newly annotated namespaces 
 - Only entries associated with namespaces explicitly annotated as global will be exported.
-- Unannotated namespaces are marked global/local depending on the value of config `scoped-export-default-enable `
+- Unannotated namespaces are marked global/local depending on the value of config `clustermesh-default-global-namespace`
 
 To explicitly mark a namespace as local, the annotation can be set as:
 
