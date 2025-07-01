@@ -103,8 +103,10 @@ When the annotation is removed or disabled for a namespace:
 An important part of this implementation is the functioning of network policies. In tunnel mode, the identitiy information is embedded in the network packet itself whereas in native routing mode, the identity information at the destination is derieved through the destination cluster's ipcache. As a result, the network policies would not be enforced due to missing identity definition/security labels in native mode and security labels in the tunnel mode. 
 
 
-#### MCS API 
-We would not crete ServiceExport CRDs for local namespaces. This would inturn prevent the corresponding ServiceImport CRDs from being created in the remote clusters. We would be making change in the ServiceExport logic to bubble up a custom exception message by the user. Similarly, all ServiceImports would be disabled for services not existing in global namespaces. 
+#### MCS Support 
+With the scoped export mode, the MCS API would be supported only if the container namespaces for the corresponding ServiceExport/ServiceImport CRDs are marked global. The behaviour upon attempting to create ServiceExport/ServiceImport CRDs in local namespaces is highlighted below
+- ServiceExport: Since ServiceExport creation is a user triggered operation, we intend to provide a user friendly exception message upon attempting to create the CRD in local namespace 
+- ServiceImport: A created ServiceImport CRD will be deemed invalid if it created in a local namespace. We intend to create a new ServiceImport condition for this specific case and block the creation of the ServiceImport CRD.
 
 ### ClusterMesh API Server Changes
 
