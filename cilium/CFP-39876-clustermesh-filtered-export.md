@@ -106,7 +106,7 @@ An important part of this implementation is the functioning of network policies.
 #### MCS Support 
 With the scoped export mode, the MCS API would be supported only if the container namespaces for the corresponding ServiceExport/ServiceImport CRDs are marked global. The behaviour upon attempting to create ServiceExport/ServiceImport CRDs in local namespaces is highlighted below
 - ServiceExport: Since ServiceExport creation is a user triggered operation, we intend to provide a user friendly exception message upon attempting to create the CRD in local namespace 
-- ServiceImport: A created ServiceImport CRD will be deemed invalid if it created in a local namespace. We intend to create a new ServiceImport condition for this specific case and block the creation of the ServiceImport CRD.
+- ServiceImport: A created ServiceImport CRD will be deemed invalid if it created in a local namespace. We intend to create a new ServiceImport condition for this specific case and block the creation of the ServiceImport CRD
 
 ### ClusterMesh API Server Changes
 
