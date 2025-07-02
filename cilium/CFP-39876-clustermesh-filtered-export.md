@@ -104,9 +104,9 @@ An important part of this implementation is the functioning of network policies.
 
 
 #### MCS Support 
-With the scoped export mode, the MCS API would be supported only if the container namespaces for the corresponding ServiceExport/ServiceImport CRDs are marked global. The behaviour upon attempting to create ServiceExport/ServiceImport CRDs in local namespaces is highlighted below
-- ServiceExport: Since ServiceExport creation is a user triggered operation, we intend to provide a user friendly exception message upon attempting to create the CRD in local namespace 
-- ServiceImport: A created ServiceImport CRD will be deemed invalid if it created in a local namespace. We intend to create a new ServiceImport condition for this specific case and block the creation or deletes any existing references to ServiceImport CRDs
+MCS-API ServiceExport and ServiceImport CRs will be only supported from a global Namespace. On a local namespace the following will be happening:
+- ServiceExport created by a user will report a Condition to signal that the namespace is local and the Service is not actually exported to the clustermesh-apiserver.
+- ServiceImport will still be created by the Cilium Operator but will also report a Condition to signal the user that the Service cannot be imported. Also the derived Service associated to the ServiceImport will not be created and any existing one will be deleted.
 
 ### ClusterMesh API Server Changes
 
