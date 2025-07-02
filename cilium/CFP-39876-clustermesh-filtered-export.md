@@ -1,4 +1,4 @@
-# CFP-39876: Scoped Export Mode for ClusterMesh
+# CFP-39876: Namespace based Export Control for ClusterMesh
 
 **SIG:** SIG-ClusterMesh
 
@@ -14,7 +14,7 @@
 
 ## Summary
 
-This CFP introduces selective distribution of CiliumEndpoint/CiliumEndpointSlice and CiliumIdentity information via Cilium ClusterMesh by adding a new “scoped-export” mode for the ClusterMesh API server, which restricts cross-cluster propagation only to resources that reside in a set of allowlisted namespaces, also known as _global namespaces_. Users can mark a namespace as global through a dedicated annotation applied to the namespace itself. This proposal targets improved scalability while acknowledging that cross-cluster endpoint access and network policy enforcement is not supported for pods outside global namespaces.
+This CFP introduces selective distribution of CiliumEndpoint/CiliumEndpointSlice and CiliumIdentity information via Cilium ClusterMesh by adding a new export mechanism for the ClusterMesh API server, which restricts cross-cluster propagation only to resources that reside in a set of allowlisted namespaces, also known as _global namespaces_. Users can mark a namespace as global through a dedicated annotation applied to the namespace itself. This proposal targets improved scalability while acknowledging that cross-cluster endpoint access and network policy enforcement is not supported for pods outside global namespaces.
 
 ## Motivation
 
@@ -26,7 +26,7 @@ The existing Cilium Clustermesh implementation distributes all CiliumIdentities 
 - endpoints/cluster=15000
 - services=0
 
-By restricting export to only resources under global namespaces, we can achieve substantial scalability improvements and operational efficiency gains. An important consideration for using this new "scoped-export" mode is that all resources under the global namespaces are exported to clusters backend. This implies that the memory and compute optimizations might be suboptimal if the cluster has most of the resources under the global namespaces. Without the proposed optimizations, it wouldn't be possible to mesh such clusters together.
+By restricting export to only resources under global namespaces, we can achieve substantial scalability improvements and operational efficiency gains. An important consideration for using this new global/local namespace feature is that all resources under the global namespaces are exported to clusters backend. This implies that the memory and compute optimizations might be suboptimal if the cluster has most of the resources under the global namespaces. Without the proposed optimizations, it wouldn't be possible to mesh such clusters together.
 
 ## Goals
 
@@ -34,14 +34,14 @@ By restricting export to only resources under global namespaces, we can achieve 
 - Full network policy support for pods inside global namespaces
 - Endpoint to Endpoint connectivity for resources under global namespaces
 - Global service functionality for resources under global namespaces
-- Support scoped export for CRD mode Ciliumidentities
+- Support Global/Local namespaces for CRD mode Ciliumidentities
 
 ## Non-Goals
 
 - Network policies for non global(local) namespaces
 - Endpoint to Endpoint connectivity for non global(local) namespaces
 - Global service functionality for non global(local) namespaces
-- Scoped export for non CRD modes of identity allocation 
+- Support Global/Local namespaces for non CRD modes of identity allocation 
  
 ## Network Policy Support 
 ### Cross-Cluster Communication and Network Policy Behavior
@@ -64,14 +64,14 @@ If either the source or the destination pod does **not** belong to a global name
 | Any                     | Any                           | No Policies             | ✅ Allowed (no restrictions) |
 
 ## Global Service Support
-In the scoped-export mode, all services within global namespaces would automatically be marked as global/local depending on the provided annotation on the namespace. Users are not required to explicitly annotate individual services. Any service which is not inside a global namespace is considered local even if it has an associated global annotation. Such a service will not share backends with remote clusters in any case.  
+In the namespace based export mode, all services within global namespaces would automatically be marked as global/local depending on the provided annotation on the namespace. Users are not required to explicitly annotate individual services. Any service which is not inside a global namespace is considered local even if it has an associated global annotation. Such a service will not share backends with remote clusters in any case.  
 
 ## MCS support
 Similar to global services, MCS support is only available for ServiceExport/ServiceImport CRDs created under global namespaces for both the local and remote clusters.  
 
 ## Implementation details
 
-The proposed scoped-export mode has a config that users can pass in to mark all non local annotated namespaces as global. 
+The proposed namespace based export mode has a config that users can pass in to mark all non local annotated namespaces as global. 
 - clustermesh-default-global-namespace - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
 
 #### Allow/Deny listing namespace
@@ -114,7 +114,7 @@ MCS-API ServiceExport and ServiceImport CRs will be only supported from a global
 We will add new watch on namespaces to check for global or local annotations and maintain internal sets for the same. Once we have the list, we will trigger a full sync operation to update the export based on the provided annotation. 
 
 #### Export Filtering
-If the scoped export mode is enabled, only the CiliumIdentities and CiliumEndpoints under global namespaces will be exported to the remote clusters. 
+If the namespace based export mode is enabled, only the CiliumIdentities and CiliumEndpoints under global namespaces will be exported to the remote clusters. 
 
 #### ServiceExport controller 
 Provide warning message when a ServiceExport is triggered for a service residing in local namespace 
