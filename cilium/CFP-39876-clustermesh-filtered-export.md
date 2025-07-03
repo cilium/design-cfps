@@ -33,7 +33,7 @@ By restricting export to only resources under global namespaces, we can achieve 
 - Enhance Cilium Clustermesh scalability through selective endpoint and identity distribution
 - Full network policy support for pods inside global namespaces
 - Endpoint to Endpoint connectivity for resources under global namespaces
-- Global service functionality for resources under global namespaces
+- Global service and Shared Service functionality for resources under global namespaces
 - Support Global/Local namespaces for CRD mode Ciliumidentities
 
 ## Non-Goals
