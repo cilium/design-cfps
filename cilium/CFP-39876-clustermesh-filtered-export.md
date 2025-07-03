@@ -66,15 +66,12 @@ If either the source or the destination pod does **not** belong to a global name
 ## Global Service Support
 For a service to be considered a Global Service, it should satisfy the following conditions 
 - It should be annotated with existing global service annotation ***service.cilium.io/global: "true"***
-- It should reside within a global namespace
-
-## MCS support
-MCS support is only available for ServiceExport/ServiceImport CRDs created under global namespaces for both the local and remote clusters.  
+- It should reside within a global namespace 
 
 ## Implementation details
 
-The proposed namespace based export mode has a config that users can pass in to mark all non local annotated namespaces as global. 
-- clustermesh-default-global-namespace - true/false Honors only the local namespace annotation and marks all non annotated namespaces as global if set to true. Honors the global annotation and marks all non annotated  namespaces as local if set to true
+The proposed namespace based export mode has a config that users can pass in to mark all non annotated namespaces as global
+- clustermesh-default-global-namespace (true/false) - Marks implicitly all non annotated namespaces as global if set to true. Marks implicitly all non annotated namespaces as local if set to false. This option is set to true by default
 
 #### Allow/Deny listing namespace
 To allowlist a namespace and mark it as global, users can annotate the namespace with:
@@ -122,8 +119,13 @@ If the namespace based export mode is enabled, only the CiliumIdentities and Cil
 Provide warning message when a ServiceExport is triggered for a service residing in local namespace 
 
 #### Supported Resource Types
-- CiliumEndpoints 
-- CiliumIdentities 
+- CiliumEndpoint(Slice)
+- CiliumIdentities
+- Global Services
+- MCS ServiceExport
+
+### Cilium Operator Changes 
+- Disable ServiceImports for CRDs in local namespaces 
 
 ### Alternative Approach1
 
