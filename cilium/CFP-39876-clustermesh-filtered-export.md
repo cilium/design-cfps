@@ -124,9 +124,6 @@ Provide warning message when a ServiceExport is triggered for a service residing
 - Global Services
 - MCS ServiceExport
 
-### Cilium Operator Changes 
-- Disable ServiceImports for CRDs in local namespaces 
-
 ### Alternative Approach1
 
 #### Add IPtoSvc and IdentityToIP cache in Clustermesh APIserver 
