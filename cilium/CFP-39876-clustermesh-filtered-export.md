@@ -64,10 +64,12 @@ If either the source or the destination pod does **not** belong to a global name
 | Any                     | Any                           | No Policies             | ✅ Allowed (no restrictions) |
 
 ## Global Service Support
-In the namespace based export mode, all services within global namespaces would automatically be marked as global/local depending on the provided annotation on the namespace. Users are not required to explicitly annotate individual services. Any service which is not inside a global namespace is considered local even if it has an associated global annotation. Such a service will not share backends with remote clusters in any case.  
+For a service to be considered a Global Service, it should satisfy the following conditions 
+- It should be annotated with existing global service annotation ***service.cilium.io/global: "true"***
+- It should reside within a global namespace
 
 ## MCS support
-Similar to global services, MCS support is only available for ServiceExport/ServiceImport CRDs created under global namespaces for both the local and remote clusters.  
+MCS support is only available for ServiceExport/ServiceImport CRDs created under global namespaces for both the local and remote clusters.  
 
 ## Implementation details
 
