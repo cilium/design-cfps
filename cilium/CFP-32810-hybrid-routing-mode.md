@@ -30,6 +30,7 @@ With higher adoption in cluster mesh and large scale clusters being common to su
 * Allow users to pass in network topologies expressed as CIDR ranges through configmap
 * Support for both IPV4 and IPV6
 * Allow dynamic configuration of CIDRs (add/remove) without agent restart (update w/o agent restart)
+* Support for multiple subnets that are not not all mutually routable
 
 ## Proposal
 
@@ -132,14 +133,16 @@ Next, while making routing decision today, in both `lxc` and `host` eBPF program
 
 Above behavior simply optimizes current encapsulation behavior, without introducing major change to how encapsulation routing works/behaves. 
 
-## Impacts / Key Questions
+## Impacts
 
 ### Impact: Network throughput
 
 Given that today Cilium is encapsulating packets that could be natively routed, removing those scenarios would yield higher throughput. This is especially true in clusters without jumbo frames.
 
-### Key Question: Datapath latency
+### Impact: Datapath latency
 
 In a highly fragmented network topography, lookup of IP to make routing decision may not be negligible.
 
 ## Future Milestones
+
+This initiative can be extended through a more formal CRD in future.
