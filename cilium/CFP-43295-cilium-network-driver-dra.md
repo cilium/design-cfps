@@ -107,7 +107,13 @@ In this context, the device manager is an abstraction of a certain type of resou
 you can see that we’re working with the `sriov` devicemanager - implying that we must account for extending 
 the feature set by introducing device managers.
 
-Updating the configuration at runtime is out of scope for now, and we can revisit it if there’s a sensible use case for doing so.
+Updating the configuration at runtime is possible for the most part. Some settings, for example,
+the number of sr-iov VF to be spawned, might need a full device restart - causing existing
+traffic to be affected. In such cases, we ideally want to avoid applying the configuration right away.
+It is up to each configuration feature to know what is safe to be changed or not, and future
+contributors should be mindful of that.
+On the other hand, it should be straightforward to add or remove pools and change the
+grouping criteria, and these kind of changes should be allowed.
 
 The resource pools to be advertised by the DRA component on the driver are explicitly set by configuration. 
 The Network Driver receives a structured configuration that contains parameters to match devices and group them together or apart
