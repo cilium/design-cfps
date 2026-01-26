@@ -73,24 +73,49 @@ A simplified workflow can be seen below:
 
 ### Solution
 
-The Network Driver functionality in the Cilium agent is an opt-in feature. 
-Enabling it can be done per-node (explicitly referencing a node name or through node labels). 
-Upon detecting a valid configuration, the Network Driver is initialized. 
-Only the nodes eligible to run the Network Driver should receive a valid configuration, 
-allowing the Driver to be initialized. To run the Network Driver, a CRD of the kind 
-CiliumNetworkDriverConfig must be present, as it is where the agent finds the Network Driver configuration. 
-The example below shows how a valid configuration looks like:
+The Network Driver functionality in the Cilium agent is an opt-in feature.
+In order to enable it, use the `networkDriver.enabled` helm flag. 
+Once enabled, each node that detects a configuration assigned to it
+becomes a Cilium Network Driver agent.
+
+#### Deploying the configuration
+
+A resource of type `CiliumNetworkDriverClusterConfig` is introduced,
+and the presence of an object of this type in the Kubernetes API 
+causes the cilium-operator pod to apply the desired configuration
+to the cilium-agent pods for which a given configuration is suitable.
+
+Since the Network Driver configuration for each agent
+depends on node specific hardware characteristics, 
+it is possible to specify `nodeSelector` to match a given 
+`CiliumNetworkDriverClusterConfig` to a node or subset of nodes
+by matching on the node labels.
+Alternatively, a configuration with an empty `nodeSelector` matches
+all nodes.
+
+Since only one configuration is used at a time for
+any given node, the cilium-operator is responsible for choosing
+the right configuration for each node, and once it selects
+a suitable configuration among the candidates, an object of type
+`CiliumNetworkDriverNodeConfig` is created for each node, containing
+the configuration specifics for the node.
+If the operator detecs that more than one configuration suits a node
+based on the node labels, it reports a conflict back to the 
+status field of the offending `CiliumNetworkDriverClusterConfig` object,
+and proceeds to either using the oldest one found - and if there is a tie,
+no configuration is selected and the status is reported for both.
+The example below illustrates how a cluster configuration looks like:
 
 ```
 ---
 apiVersion: cilium.io/v1
-kind: CiliumNetworkDriverConfig
+kind: CiliumNetworkDriverClusterConfig
 metadata:
-  name: cilium-network-driver-config
+  name: sriov-nodes-cluster-config
+nodeSelector:
+    matchLabels: 
+      sriov: true 
 spec:
-  selectors:
-    labels: 
-       - cilium.io/network-driver
   driverName: "sriov.cilium.k8s.io"
   deviceManagerConfigs:
       sriov:
@@ -101,6 +126,33 @@ spec:
           - ifName: enp2s0f1np1
             vfCount: 6
 ```
+
+Which in turn, will lead to the creation of `CiliumNetworkDriverNodeConfig`
+objects for each of the nodes, for example:
+
+```
+---
+apiVersion: cilium.io/v1
+kind: CiliumNetworkDriverNodeConfig
+metadata:
+  name: mynode-network-driver-node-config
+nodeName: mynode
+spec:
+  driverName: "sriov.cilium.k8s.io"
+  deviceManagerConfigs:
+      sriov:
+        enabled: true
+        ifaces:
+          - ifName: enp2s0f0np0
+            vfCount: 6
+          - ifName: enp2s0f1np1
+            vfCount: 6
+```
+
+Note that an operator can also create `CiliumNetworkDriverNodeConfig` matching
+for each of the nodes manually and skip the cilium-operator config selection. 
+
+#### Agent configuration
 
 Under the deviceManagerConfigs section, an operator is able to control how a specific device manager is set up. 
 In this context, the device manager is an abstraction of a certain type of resource. In the example below, 
@@ -114,6 +166,11 @@ It is up to each configuration feature to know what is safe to be changed or not
 contributors should be mindful of that.
 On the other hand, it should be straightforward to add or remove pools and change the
 grouping criteria, and these kind of changes should be allowed.
+Cilium agent listens for configuration updates, and if there is the need of
+any changes considered impactful, it will log an error message to signal that
+an action may need to be taken.
+
+#### Resource pools
 
 The resource pools to be advertised by the DRA component on the driver are explicitly set by configuration. 
 The Network Driver receives a structured configuration that contains parameters to match devices and group them together or apart
@@ -123,13 +180,10 @@ An example configuration structure with pools defined can be seen below:
 ```
 ---
 apiVersion: cilium.io/v1
-kind: CiliumNetworkDriverConfig
+kind: CiliumNetworkDriverClusterConfig
 metadata:
-  name: cilium-network-driver-config
+  name: cilium-network-driver-cluster-config
 spec:
-  selectors:
-    labels: 
-       - cilium.io/network-driver
   driverName: "sriov.cilium.k8s.io"
   deviceManagerConfigs:
       sriov:
@@ -152,6 +206,8 @@ spec:
 
 With these filters, all the SR-IOV VFs whose PF kernel ifname matches `enp2s0f0np0` will be assigned
 to `a-side` pool, whereas all the VFs under the PF named `enp2s0f1np1` are advertised as part of `b-side` pool.
+
+#### Publishing and claiming resources
 
 The Agent’s Network Driver then publishes a ResourceSlice pool named after Name, containing all the local 
 devices that fulfill all the Filter conditions. Multiple pools can be defined.
