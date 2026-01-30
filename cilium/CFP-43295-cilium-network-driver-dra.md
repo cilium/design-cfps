@@ -135,8 +135,7 @@ objects for each of the nodes, for example:
 apiVersion: cilium.io/v1
 kind: CiliumNetworkDriverNodeConfig
 metadata:
-  name: mynode-network-driver-node-config
-nodeName: mynode
+  name: mynode-hostname
 spec:
   driverName: "sriov.cilium.k8s.io"
   deviceManagerConfigs:
@@ -150,7 +149,9 @@ spec:
 ```
 
 Note that an operator can also create `CiliumNetworkDriverNodeConfig` matching
-for each of the nodes manually and skip the cilium-operator config selection. 
+for each of the nodes manually and skip the cilium-operator config selection.
+To target a node, deploy a `CiliumNetworkDriverNodeConfig` named after the 
+node's hostname.
 
 #### Agent configuration
 
