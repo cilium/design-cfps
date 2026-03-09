@@ -8,7 +8,7 @@
 
 **Authors:** Hadrien Patte <hadrien.patte@datadoghq.com>
 
-**Status:** Draft
+**Status:** Implementable
 
 ## Summary
 
@@ -59,9 +59,9 @@ Prefix delegation:
 
 Secondary IPs:
 1. Operator allocates ENI and secondary IPs from AWS (unchanged).
-2. Operator writes each IP as a /32 CIDR in `CiliumNode.Spec.IPAM.Pools.Allocated` under pool `"eni"` (see "Key Question 2").
+2. Operator writes each IP as a /32 CIDR in `CiliumNode.Spec.IPAM.Pools.Allocated` under pool `"default"`.
 3. Agent allocates IPs locally from the CIDR pool. No per-IP Kubernetes update is required.
-4. Agent reports aggregate demand via `Spec.IPAM.Pools.Requested[pool:"eni"].needed.ipv4Addrs`.
+4. Agent reports aggregate demand via `Spec.IPAM.Pools.Requested[pool:"default"].needed.ipv4Addrs`.
 
 Prefix delegation:
 1. Operator allocates ENI and a /28 prefix from AWS (unchanged).
@@ -154,33 +154,6 @@ Introduce a temporary Helm/ConfigMap flag (e.g., `ipam.eniLegacyPoolDualWrite: f
 * Adds a short-lived flag that must be documented and then removed, with a deprecation notice in 1.21.
 * Risk of users enabling it prematurely (before all agents have fully rolled to 1.20), leaving some nodes without a populated `Spec.IPAM.Pool`.
 
-### Key Question 2: Pool Naming Strategy
-
-Should all ENI-allocated addresses share a single `"eni"` pool, or should there be more purpose-named pools?
-
-#### Option 1: Single `"eni"` Pool
-
-All CIDRs regardless of subnet are written under a single pool name.
-
-##### Pros
-* Simpler operator logic; no pool name coordination needed.
-* Straightforward for the initial migration.
-
-##### Cons
-* Cannot express per-subnet constraints; future per-subnet pod placement would require a redesign.
-
-#### Option 2: Per-Subnet Pools
-
-Each subnet maps to a distinct pool name (e.g., `"eni-subnet-<subnet-id>"`).
-
-##### Pros
-* Enables future per-subnet pod placement policy.
-* Pools naturally map to AWS subnet boundaries.
-
-##### Cons
-* More complex operator logic for pool name management.
-* Pool names must be stable across reconcile cycles; subnet IDs are suitable but verbose.
-
 ## Future Milestones
 
 ### IPv6 Secondary Addresses in ENI IPAM
@@ -191,6 +164,8 @@ With the multi-pool allocator in place, IPv6 secondary addresses can be written 
 
 AWS assigns /80 prefixes for IPv6 ENI delegation. With the multi-pool allocator, a /80 CIDR can be written directly to `Allocated` and the agent allocates from it locally. This is the primary long-term motivation for this migration and is not implementable with the current CRD allocator.
 
-### Per-Subnet Pod Placement
+### Per-Subnet and Multi-Subnet Pod Placement
 
-If per-subnet pools are adopted (Key Question 2, Option 2), named pools could be used to control which subnet a pod's IP is drawn from, enabling topology-aware placement without changes to the scheduling layer.
+This CFP uses a single pool named `"default"` for simplicity. A future extension could introduce named pools that map to AWS subnet boundaries, allowing policy to control which subnet a pod's IP is drawn from. This would enable topology-aware placement (e.g., pinning workloads to a specific availability zone or security domain) without changes to the scheduling layer.
+
+The pool-to-subnet mapping need not be strictly one-to-one. There are use cases where multiple subnets should share a pool (e.g., grouped by a subnet tag filter), so the design should allow a pool to span multiple subnets. The exact mapping semantics — whether pools are named by subnet ID, subnet tag, or a user-defined label — should be designed as a standalone CFP once the base migration is in place.
