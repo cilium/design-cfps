@@ -46,7 +46,7 @@ function (CNF/VNF) workloads, low latency data ingestion, and dpdk based applica
     the Kubernetes DRA plugin API, in a way that Pods that require a given network 
     device can get scheduled on an appropriate node.
 - Cilium to be able to preconfigure such devices
-- Support SR-IOV VF assignment
+- Support SR-IOV VF assignment to pods
 
 ## Non-Goals
 
@@ -153,7 +153,25 @@ for each of the nodes manually and skip the cilium-operator config selection.
 To target a node, deploy a `CiliumNetworkDriverNodeConfig` named after the 
 node's hostname.
 
+##### Conflict scenarios
+
+The dynamic aspect of the nodeLabel selector mechanism to match configuration
+to nodes might lead to cases where conflicts may arise. A conflict happens
+when more than exactly one `CiliumNetworkDriverClusterConfig` object matches
+a given node based on the node's labels. The operator handles conflicts
+with the ultimate goal of preventing unwanted configuration updates or changes
+to the agents.
+This means that the operator needs to be aware of any previous decision and persist
+that decision across reloads/reboots/restarts with a deterministic outcome.
+
 #### Agent configuration
+
+The feature introduces the concept of a Device Manager; which is the device
+specific logic required to discover, select, publish and set-up devices using
+the DRA and NRI frameworks. In other words, it provides extensibility by
+abstracting the device specific logic from the assignment lifecycle.
+Since our first use case is for assigning SR-IOV VFs to pods,
+that one is the one focused throughout this document unless stated otherwise.
 
 Under the deviceManagerConfigs section, an operator is able to control how a specific device manager is set up. 
 In this context, the device manager is an abstraction of a certain type of resource. In the example below, 
@@ -221,7 +239,7 @@ devices:
       string: "0x1016"
     driver:
       string: mlx5_core
-    ifName:
+    kernelIfName:
       string: enp2s0f0v0
     pfName:
       string: enp2s0f0np0
@@ -237,6 +255,8 @@ pool:
   name: a-side
   resourceSliceCount: 1
 ```
+
+Note: the set of attributes above are illustrative and may change in the upcoming iterations.
 
 Devices can be assigned to Pods by creating pods with a ResourceClaim statement in the pod manifest.
 The ResourceClaim object can be seen as the set of resources a Pod needs - influencing the Kubernetes 
@@ -313,17 +333,15 @@ spec:
           opaque:
             driver: sriov.cilium.k8s.io
             parameters:
-              vlan: 123
-	            ipam_pools:
-                - pool-a
+              vlanID: 123
+              ipv4Address: 192.0.2.1/30
         - requests:
             - b-side
           opaque:
             driver: sriov.cilium.k8s.io
             parameters:
               vlan: 321
-              ipam_pools:
-                - pool-b
+              ipv6Address: fc00:100::1/64
       requests:
       - name: a-side
         exactly:
@@ -337,10 +355,82 @@ When processing a PrepareResourceClaim request, the agent performs all the neces
 the device and stores any information that will be needed when the pod finally starts and the device is ready 
 to be configured in the pod sandbox.
 
-Preparation steps may include contacting an IPAM to request addresses, reconfigure the interface mac address,
+Preparation steps may include reconfigure the interface mac address, adjust interface / device flags,
 associate a SR-IOV device with a VLAN, among others. When the pod finally starts, the container runtime hook is called and it 
 executes the last steps in the configuration within the pod namespace: configures the addresses on the interface,
- bring it up, add routes to the routing table, for example.
+bring it up, add routes to the routing table, for example.
+
+#### CiliumResourceNetworkConfig
+
+Alternatively, for the less trivial deployments, a requested device on a ResourceClaim may reference a CiliumResourceNetworkConfig object.
+This method is suited for environments where node specific variables (such as VLAN IDs, routes, and IPAM details) are required.
+`CiliumResourceNetworkConfig` allows for using a named object that abstracts away these details with the goal of making the 
+`ResourceClaim` objects more generic and impose less constraints in regards to the underlying network.
+The example below shows a `ResourceClaimTemplate` object that references a `CiliumResourceNetworkConfig` object - and the attributes
+used to set up the allocation differ between the nodes.
+
+```
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  containers:
+  ...
+  resourceClaims:
+  - name: attach-network-a
+    resourceClaimTemplateName: attach-network-a
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: attach-network-a
+spec:
+  spec:
+    devices:
+      config:
+        - requests:
+            - a-side
+          opaque:
+            driver: sriov.cilium.k8s.io
+            parameters:
+              networkConfig: network-config-a
+      requests:
+      - name: a-side
+        exactly:
+          deviceClassName: a-side.sriov.cilium.k8s.io
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumResourceNetworkConfig
+metadata:
+  name: network-config-a
+spec:
+  - nodeSelector:
+      matchLabels:
+        kubernetes.io/hostname: kind-worker
+    ipv4:
+      ipv4Address: 10.10.0.10/24
+      staticRoutes:
+        - destination: 10.0.0.0/8
+          gateway: 10.10.0.1
+  - nodeSelector:
+      matchLabels:
+        kubernetes.io/hostname: kind-control-plane
+    ipv4:
+      ipv4Address: 10.20.0.10/24
+      staticRoutes:
+        - destination: 10.0.0.0/8
+          gateway: 10.20.0.1
+```
+
+The configuration set above results in the Pod being able to be scheduled on both kind-worker and
+kind-control-plane. Depending on the node where it gets scheduled, it receives a certain ip
+and with certain routes.
+
+Note: in the example, we use static addresses for illustration purposes only. The long term plan is
+to be able to reference an IPAM pool - as static addresses brings an increase in the
+management overhead.
 
 ### Resources IP address management
 
