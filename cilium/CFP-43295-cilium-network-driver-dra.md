@@ -432,20 +432,6 @@ Note: in the example, we use static addresses for illustration purposes only. Th
 to be able to reference an IPAM pool - as static addresses brings an increase in the
 management overhead.
 
-### Resources IP address management
-
-To manage the IP addresses for DRA resources a dedicated IPAM mode is added to the agent: Multi Pool Resource IPAM.
-This mode works the same way as the [Multi pool IPAM](https://docs.cilium.io/en/v1.18/network/concepts/ipam/multi-pool/) for pods,
-but it manages IP pools reserved for DRA resources.
-Similarly to CiliumPodIPPool, the CiliumResourceIPPool contains cluster-wide IP pools reserved for DRA resources addresses
-allocations. CIDRs from those pools are allocated by the operator to the agents on a per-need basis: whenever a resource needs an
-IP address from a pool, the agent requests additional CIDRs in the CiliumNode `spec.ipam.resourcepools.requested` field and the operator
-writes the allocated CIDRs in the CiliumNode `spec.ipam.resourcepools.allocated` field.
-
-This mode allows for great flexibility in defining multiple IP pools for different DRA resource types and it allows the reuse of most of
-the implementation for the Multi Pool Pod IPAM. Using separate k8s resources to define IP pools ensures there is no interference between
-the DRA Resources and Pod IPAM.
-
 ### Restrictions 
 Requires Kubernetes v1.34
 
