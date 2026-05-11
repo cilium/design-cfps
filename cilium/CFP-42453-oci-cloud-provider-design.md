@@ -144,30 +144,38 @@ _List crucial impacts and key questions. They likely require discussion and are 
 
 ### Impact: Integration with OCI
 
-### Impact: Increased Maintenanc
-
-Depending on the chosen solution, there may be additional maintenance and coordination required. 
-
-For in-tree solutions, the controller will need to be updated.
-
-For out-of-tree solutions, there may be additional integration testing.
+The Kubernetes IPAM solution requires the least effort to integrate with Cilium while also providing a Kubernetes Agnostic solution. All other solutions require additional maintenance or coordination to implement.
 
 ### Key Question: Cilium Testing
 
-How does Cilium perform CNI testing? What solution will require the least amount of maintenance/coordination?
+> How does Cilium perform CNI testing? What solution will require the least amount of maintenance/coordination?
+
+Cloud providers are responsible for their own solutions.
 
 ### Key Question: Cloud Provider Support Model
 
-What does the support model look like for Cloud Providers for integrated pieces, like the Cilium Operator?
+> What does the support model look like for Cloud Providers for integrated pieces, like the Cilium Operator?
+
+The team suggests not implementing in-tree solutions into the Cilium Operator because of the required coordination.
 
 ### Key Question: Multi-VNIC Solution
 
-Is there any negative impact from implementing a Multi-VNIC solution?
+> Is there any negative impact from implementing a Multi-VNIC solution?
+
+Cilium does not have strong support for Multi-VNIC solutions right now.
 
 ## Future Milestones
 
+## Single-VNIC Solution
+
+As a first pass, OCI will implement the Kubernetes IPAM solution.
+
+Ultimately, the simplicity of the solution along with the CNI agnostic behavior made this the most attractive short term solution.
+
 ### Multi-VNIC Solution
 
-Long term, OKE will provide a multi-NIC solution, where users can route pods out of VNICs.
+Long term, OKE will reevalute multi-NIC solutions, where users can route pods out of VNICs, when Dynamic Resource Allocation (DRA) provides better support.
 
-TODO: Provide more details on this
+[DRANet](https://github.com/google/dranet) is a possible future solution (it would need to incorporate [consumable capacity](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#consumable-capacity)).
+
+[Node Resource Interface](https://github.com/containerd/nri) is another possible alternative.
