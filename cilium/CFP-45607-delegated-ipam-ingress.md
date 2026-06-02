@@ -63,13 +63,26 @@ For ingress IPs we use `cilium-ingress-<node-name>` we use as `CNI_CONTAINERID` 
 
 The other CNI parameters have defaults in the CNI call since we're only doing IPAM, not actual network plumbing:
 
-* `CNI_NETNS` = `/proc/1/ns/net` (host network namespace)
+* `CNI_NETNS` = path to an ephemeral, empty network namespace created by the agent for the duration of each ADD/DEL invocation (see [Ephemeral network namespace](#ephemeral-network-namespace) below)
 * `CNI_IFNAME` = `eth0` (must match between ADD and DEL, since many IPAM plugins key bookkeeping on container ID + ifname)
 * `K8S_POD_NAME` = `cilium-ingress-<node-name>`
 * `K8S_POD_NAMESPACE` = `kube-system`
 
-We also append [`CNI_NETNS_OVERRIDE=1`][cni-netns-override] to the environment, to avoid CNI spec validation around actual netns creation.
+### Ephemeral network namespace
 
+For each ADD/DEL the agent creates a fresh, empty network namespace using the same `pkg/netns` helper that cilium-health uses ([`netns.New()` in `pkg/health/health_connectivity_endpoint.go`][cilium-health-netns-new]), passes its path as `CNI_NETNS`, and closes the handle as soon as the plugin returns. Because no process ever runs inside it and the agent never pins it, the kernel destroys the namespace once the last reference is dropped.
+
+Although the spec is an IPAM-only delegation (no network plumbing is intended), the ephemeral netns is created as a precaution.
+
+### Plugin execution context
+
+The IPAM plugin binary is invoked as a child process of `cilium-agent`, which means it runs **inside the cilium-agent container**, not on the host. This has a few implications that operators of delegated IPAM plugins should be aware of:
+
+* Any filesystem paths the plugin reads or writes (state files, sockets, config) must be reachable from inside the cilium-agent container.
+* The plugin inherits the cilium-agent container's network namespace, user, and capabilities for everything except `CNI_NETNS` (which points at the ephemeral netns described above).
+* Plugins that shell out to other binaries must have those binaries available inside the container as well.
+
+This is a behavioral difference from the standard pod IP CNI flow, where the plugin is invoked by the kubelet/container runtime on the host and therefore sees host paths directly.
 
 ### Plugin binary path and volume mounts
 
@@ -199,6 +212,7 @@ The early [`UpdateCiliumNodeResource()`][daemon-l151] is gated to ClusterPool/Mu
 [cilium-ipam-block]: https://github.com/cilium/cilium/blob/70ae8d0ef536de807aab849291e5a68758cb8d4d/pkg/option/config.go#L3803
 [cni-netns-override]: https://github.com/containernetworking/cni/pull/890
 [cni-spec-lifecycle]: https://github.com/containernetworking/cni/blob/main/SPEC.md#lifecycle--ordering
+[cilium-health-netns-new]: https://github.com/cilium/cilium/blob/27eb281eb554ef7f00180a108ecdb404fbafa8fe/pkg/health/health_connectivity_endpoint.go#L286
 [daemon-l151]: https://github.com/cilium/cilium/blob/a1afcb4b88db6d3160b4c315ad8796748b30fbe8/daemon/cmd/daemon.go#L151-L156
 [daemon-l158]: https://github.com/cilium/cilium/blob/a1afcb4b88db6d3160b4c315ad8796748b30fbe8/daemon/cmd/daemon.go#L158
 [daemon-l217-2]: https://github.com/cilium/cilium/blob/a1afcb4b88db6d3160b4c315ad8796748b30fbe8/daemon/cmd/daemon.go#L217-L224
