@@ -101,9 +101,8 @@ a suitable configuration among the candidates, an object of type
 the configuration specifics for the node.
 If the operator detecs that more than one configuration suits a node
 based on the node labels, it reports a conflict back to the 
-status field of the offending `CiliumNetworkDriverClusterConfig` object,
-and proceeds to either using the oldest one found - and if there is a tie,
-no configuration is selected and the status is reported for both.
+status field of the offending `CiliumNetworkDriverClusterConfig` object
+as described in the [`Conflict scenarios`](./CFP-43295-cilium-network-driver-dra.md#conflict-scenarios) section,
 The example below illustrates how a cluster configuration looks like:
 
 ```
@@ -112,19 +111,19 @@ apiVersion: cilium.io/v1
 kind: CiliumNetworkDriverClusterConfig
 metadata:
   name: sriov-nodes-cluster-config
-nodeSelector:
-    matchLabels: 
-      sriov: true 
 spec:
-  driverName: "sriov.cilium.k8s.io"
-  deviceManagerConfigs:
-      sriov:
-        enabled: true
-        ifaces:
-          - ifName: enp2s0f0np0
-            vfCount: 6
-          - ifName: enp2s0f1np1
-            vfCount: 6
+  nodeSelector:
+      matchLabels: 
+        sriov: true
+  spec:
+    driverName: "sriov.cilium.k8s.io"
+    deviceManagerConfigs:
+        sriov:
+          ifaces:
+            - ifName: enp2s0f0np0
+              vfCount: 6
+            - ifName: enp2s0f1np1
+              vfCount: 6
 ```
 
 Which in turn, will lead to the creation of `CiliumNetworkDriverNodeConfig`
@@ -140,18 +139,12 @@ spec:
   driverName: "sriov.cilium.k8s.io"
   deviceManagerConfigs:
       sriov:
-        enabled: true
         ifaces:
           - ifName: enp2s0f0np0
             vfCount: 6
           - ifName: enp2s0f1np1
             vfCount: 6
 ```
-
-Note that an operator can also create `CiliumNetworkDriverNodeConfig` matching
-for each of the nodes manually and skip the cilium-operator config selection.
-To target a node, deploy a `CiliumNetworkDriverNodeConfig` named after the 
-node's hostname.
 
 ##### Conflict scenarios
 
@@ -203,24 +196,24 @@ kind: CiliumNetworkDriverClusterConfig
 metadata:
   name: cilium-network-driver-cluster-config
 spec:
-  driverName: "sriov.cilium.k8s.io"
-  deviceManagerConfigs:
-      sriov:
-        enabled: true
-        ifaces:
-          - ifName: enp2s0f0np0
-            vfCount: 6
-          - ifName: enp2s0f1np1
-            vfCount: 6
-  pools:
-    - name: a-side
-      filter:
-        pfNames:
-          - enp2s0f0np0
-    - name: b-side
-      filter:
-        pfNames:
-          - enp2s0f1np1
+  spec:
+    driverName: "sriov.cilium.k8s.io"
+    deviceManagerConfigs:
+        sriov:
+          ifaces:
+            - ifName: enp2s0f0np0
+              vfCount: 6
+            - ifName: enp2s0f1np1
+              vfCount: 6
+    pools:
+      - name: a-side
+        filter:
+          pfNames:
+            - enp2s0f0np0
+      - name: b-side
+        filter:
+          pfNames:
+            - enp2s0f1np1
 ```
 
 With these filters, all the SR-IOV VFs whose PF kernel ifname matches `enp2s0f0np0` will be assigned
@@ -315,7 +308,8 @@ spec:
 
 Once a device is assigned, the Pod might require specific configuration in it. In the case of network devices, 
 this configuration usually contains IP (v4/v6) addresses, routes and VLANs. These parameters are passed by the 
-ResourceClaimTemplate definition as opaque configs for the request.
+ResourceClaimTemplate definition as opaque configs for the request. Note that there is no parameter for passing
+IP addresses directly, and an IPAM pool must be referenced if an address is to be allocated.
 Here is a modified version the claim above to pass additional parameters to the Network Driver in the claim request:
 
 ```
@@ -334,14 +328,12 @@ spec:
             driver: sriov.cilium.k8s.io
             parameters:
               vlanID: 123
-              ipv4Address: 192.0.2.1/30
         - requests:
             - b-side
           opaque:
             driver: sriov.cilium.k8s.io
             parameters:
               vlan: 321
-              ipv6Address: fc00:100::1/64
       requests:
       - name: a-side
         exactly:
@@ -410,7 +402,7 @@ spec:
       matchLabels:
         kubernetes.io/hostname: kind-worker
     ipv4:
-      ipv4Address: 10.10.0.10/24
+      address: 10.10.0.10/24
       staticRoutes:
         - destination: 10.0.0.0/8
           gateway: 10.10.0.1
@@ -418,7 +410,7 @@ spec:
       matchLabels:
         kubernetes.io/hostname: kind-control-plane
     ipv4:
-      ipv4Address: 10.20.0.10/24
+      adress: 10.20.0.10/24
       staticRoutes:
         - destination: 10.0.0.0/8
           gateway: 10.20.0.1
