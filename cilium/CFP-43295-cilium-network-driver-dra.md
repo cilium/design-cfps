@@ -99,7 +99,7 @@ the right configuration for each node, and once it selects
 a suitable configuration among the candidates, an object of type
 `CiliumNetworkDriverNodeConfig` is created for each node, containing
 the configuration specifics for the node.
-If the operator detecs that more than one configuration suits a node
+If the operator detects that more than one configuration suits a node
 based on the node labels, it reports a conflict back to the 
 status field of the offending `CiliumNetworkDriverClusterConfig` object
 as described in the [`Conflict scenarios`](./CFP-43295-cilium-network-driver-dra.md#conflict-scenarios) section,
@@ -218,6 +218,18 @@ spec:
 
 With these filters, all the SR-IOV VFs whose PF kernel ifname matches `enp2s0f0np0` will be assigned
 to `a-side` pool, whereas all the VFs under the PF named `enp2s0f1np1` are advertised as part of `b-side` pool.
+
+#### Configuration updates
+
+Configuration updates are allowed, although some configuration attributes are marked immutable as changing them
+might cause impact to running workloads (ex: SR-IOV VFs disappearing) or trigger resource churn towards 
+the kube api (could affect scheduling in unexpected ways).
+Below is a list of which attributes cannot be changed at runtime:
+- Driver name
+- SR-IOV vf counts
+
+Adding and changing pools and filters is supported, and when a change is detected, the agent immediately runs a scan and
+publishes the new version of the resource slices.
 
 #### Publishing and claiming resources
 
