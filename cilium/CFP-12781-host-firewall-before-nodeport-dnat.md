@@ -161,6 +161,32 @@ Recirculate to tail_handle_ipv4_from_netdev
 NodePort/LB processing
 ```
 
+## Why `loadBalancerSourceRanges` Is Not Sufficient
+
+Kubernetes `Service.spec.loadBalancerSourceRanges` provides per-service source IP filtering for LoadBalancer services. While superficially similar, it does not address the use cases motivating this CFP for several reasons:
+
+### 1. Not a Centralized Policy Mechanism
+
+`loadBalancerSourceRanges` is a per-service field that must be set on each individual Service or Gateway object. This means an external controller or platform operator would need to dynamically patch the configuration of user-owned services with allowed source IP ranges. This is invasive and conflict-prone — in environments where services are managed by GitOps tooling such as ArgoCD or Flux, external mutations to service specs will be detected as drift and reverted, creating a reconciliation loop. A `CiliumClusterwideNetworkPolicy`, by contrast, is a single cluster-wide policy object that is independent of individual service definitions.
+
+### 2. No Support for Exclusions (Allow + Deny Combinations)
+
+`loadBalancerSourceRanges` is a whitelist-only mechanism — it can only specify which source CIDRs are allowed. There is no way to express exclusion rules or combine allow and deny semantics. `CiliumClusterwideNetworkPolicy` supports richer policy expressions including `fromCIDRSet` with `except` fields.
+
+### 3. Requires Non-Default Cilium Configuration
+
+By default, Cilium only enforces `loadBalancerSourceRanges` on LoadBalancer and ExternalIPs service frontends. Extending enforcement to NodePort frontends requires setting `bpf.lbSourceRangeAllTypes=true` in the Cilium Helm configuration. This is a non-starter on natively integrated Cilium deployments such as GKE Datapath v2 and AKS ACNS, where platform operators do not control or expose Cilium configuration flags.
+
+### 4. Kubernetes API Rejects `loadBalancerSourceRanges` on NodePort Services
+
+The Kubernetes API server validates that `spec.loadBalancerSourceRanges` (and the legacy annotation `service.beta.kubernetes.io/load-balancer-source-ranges`) may only be set when `spec.type` is `LoadBalancer`. Attempting to apply source ranges to a NodePort service results in:
+
+```
+The Service "example" is invalid: spec.LoadBalancerSourceRanges: Forbidden: may only be used when `type` is 'LoadBalancer'
+```
+
+This means source range filtering via this mechanism is fundamentally unavailable for NodePort services at the Kubernetes API level, regardless of what the underlying CNI supports.
+
 ## Impacts / Key Questions
 
 ### Impact: Breaking Change for Existing Users
