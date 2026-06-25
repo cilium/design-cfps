@@ -410,6 +410,7 @@ kind: CiliumResourceNetworkConfig
 metadata:
   name: network-config-a
 spec:
+  nodeConfigs:
   - nodeSelector:
       matchLabels:
         kubernetes.io/hostname: kind-worker
