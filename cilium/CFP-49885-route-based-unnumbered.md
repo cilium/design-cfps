@@ -70,14 +70,17 @@ interface using a more specific route when the default route is unsuitable.
 
 ### API
 
-Add `route` under the existing `autoDiscovery.unnumbered` configuration:
+Add `deviceDiscovery` under the existing `autoDiscovery.unnumbered`
+configuration, with mode `Route` selecting an interface by route prefix:
 
 ```yaml
 autoDiscovery:
   mode: Unnumbered
   unnumbered:
-    route:
-      prefix: 0.0.0.0/0
+    deviceDiscovery:
+      mode: Route
+      route:
+        prefix: 0.0.0.0/0
 ```
 
 An IPv6 or more specific prefix uses the same API:
@@ -86,8 +89,10 @@ An IPv6 or more specific prefix uses the same API:
 autoDiscovery:
   mode: Unnumbered
   unnumbered:
-    route:
-      prefix: fd00::/64
+    deviceDiscovery:
+      mode: Route
+      route:
+        prefix: fd00::/64
 ```
 
 Existing explicit interface configuration remains valid:
@@ -99,11 +104,14 @@ autoDiscovery:
     interface: eth0
 ```
 
-Require exactly one of `unnumbered.interface` and `unnumbered.route`. Require a
-valid CIDR prefix when `route` is present.
-Proposed validation
-requires the network prefix to be canonical, rejecting host bits rather than
-silently masking them.
+Require exactly one of `unnumbered.interface` and `unnumbered.deviceDiscovery`.
+Initially, `Route` is the only supported device discovery mode and requires
+`deviceDiscovery.route` with a valid CIDR prefix. Proposed validation requires
+the network prefix to be canonical, rejecting host bits rather than silently
+masking them.
+
+The explicit device discovery mode clarifies what is being discovered and leaves
+room for future methods, such as regex-based device matching.
 
 The existing constraints on `peerAddress` and `autoDiscovery` continue to apply.
 `unnumbered` is valid only with mode `Unnumbered`; `defaultGateway` remains the
@@ -160,7 +168,7 @@ dependency and prevent reliable recovery.
 The API introduced by the merged unnumbered work in
 [PR #47394](https://github.com/cilium/cilium/pull/47394) continues to support
 `unnumbered.interface`. Its schema must make `interface` optional individually
-while enforcing exactly one of `interface` and `route`.
+while enforcing exactly one of `interface` and `deviceDiscovery`.
 
 The sibling `defaultGateway` configuration for mode `Unnumbered` in PR #49786
 would be replaced before merge. Existing `DefaultGateway` users would retain
