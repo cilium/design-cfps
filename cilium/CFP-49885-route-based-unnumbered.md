@@ -51,7 +51,8 @@ interface using a more specific route when the default route is unsuitable.
 
 ## Goals
 
-- Select an unnumbered peering interface following a default IPv4 or IPv6 route prefix.
+- Select an unnumbered peering interface using an exact IPv4 or IPv6 route
+  prefix, including default routes.
 - Keep the route's address family independent of the IPv6 link-local BGP transport.
 - Preserve explicit interface selection and existing unnumbered peer discovery.
 - Reconcile interface selection when relevant routes or devices change.
@@ -108,7 +109,8 @@ Require exactly one of `unnumbered.interface` and `unnumbered.deviceDiscovery`.
 Initially, `Route` is the only supported device discovery mode and requires
 `deviceDiscovery.route` with a valid CIDR prefix. Proposed validation requires
 the network prefix to be canonical, rejecting host bits rather than silently
-masking them.
+masking them. The prefix determines the route's address family, so there is no
+separate `addressFamily` field.
 
 The explicit device discovery mode clarifies what is being discovered and leaves
 room for future methods, such as regex-based device matching.
@@ -163,6 +165,29 @@ bootstraps. A DHCP, static, or connected route can serve this purpose. Depending
 on a route learned only through that same session would create a circular
 dependency and prevent reliable recovery.
 
+### Conflicting peer entries
+
+Conflict handling applies to peer entries within the same BGP instance that
+resolve to the same BGP endpoint, including its interface scope. Matching
+link-local addresses on different interfaces do not by themselves conflict.
+
+An entry configured with `unnumbered.interface` takes precedence over a
+route-discovered entry resolving to the same endpoint, regardless of discovery
+order or whether the route-discovered session is already established. Cilium
+suppresses the route-discovered peer and reports a diagnostic identifying the
+conflicting peer entries. Only the winning entry's configuration is applied;
+settings such as ASNs and route policies are not combined.
+
+For conflicts without a unique explicit-interface winner, this proposal rejects
+all conflicting entries and reports a diagnostic rather than selecting a winner
+by peer name or discovery order. This includes conflicts between two
+route-discovered entries or between two explicit-interface entries. Rejecting
+such a conflict may remove an established session.
+
+Reconciliation must reconsider suppressed or rejected peers when configuration,
+route, or neighbor changes remove the conflict. Suppressing a peer must not
+remove Router Advertisement state still needed by the winning peer.
+
 ### Compatibility and implementation
 
 The API introduced by the merged unnumbered work in
@@ -179,7 +204,10 @@ selection, change tracking, documentation, and tests. Tests should cover exact
 matching, both route families, arbitrary prefixes, metric preference, interface
 ambiguity, route and device changes, invalid configuration, and preservation of
 explicit-interface behavior. Lifecycle tests should verify cleanup and recovery
-when route selection disappears or moves to another interface.
+when route selection disappears or moves to another interface. Conflict tests
+should cover explicit-interface precedence in either discovery order, replacement
+of an established route-discovered session, conflicts without a unique winner,
+diagnostics, and recovery after a conflict is removed.
 
 ## Impacts and Key Questions
 
