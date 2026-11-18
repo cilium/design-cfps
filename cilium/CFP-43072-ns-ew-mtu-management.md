@@ -50,19 +50,19 @@ our in-cluster network (i.e. east-west (E/W) traffic).
 In general, it is broadly accepted that 1500 is the correct "safe" MTU used for the
 internet ([RFC-4821](https://www.rfc-editor.org/info/rfc4821)).
 
-This document seeks to propose a amended approach to managing MTU in Cilium that
+This document seeks to propose an amended approach to managing MTU in Cilium that
 allows users to run a split MTU environment: in-cluster east-west (E/W) traffic, and all
 other external traffic (north-south (N/S)).
 
 ## Background
 
-Conventionally there are a few ways to deal with the problem differing network MTU's:
+Conventionally there are a few ways to deal with the problem of differing network MTUs:
 
 * Fragmentation: Performed by either the Kernels IP layer or intermediate routers; undesirable due
-    to large performance overhead. As well instead of fragmentations packets may simply be dropped
+    to large performance overhead. As well, instead of fragmentation, packets may simply be dropped
     leading to connection black holes.
-* Path MTU discovery (PMTUD) (Ref)[https://www.rfc-editor.org/info/rfc1191/#section-2]: relies on
-    ICMP frag-needed (FN) and ICMPv6 packet-too-bug (PTB) messages
+* Path MTU discovery (PMTUD) [Ref](https://www.rfc-editor.org/info/rfc1191/#section-2): relies on
+    ICMP frag-needed (FN) and ICMPv6 packet-too-big (PTB) messages
     sent or forwarded back by intermediate routers that determine the packet size will exceed the networks MTU.
     This is considered a generally unreliable mechanism as it relies on all intermediate network hops
     to correctly forward the PMTU ICMP message back to the client. Any drops (i.e. due to firewall rules,
@@ -80,9 +80,9 @@ This CFP proposes extending Ciliums current flat MTU management approach into on
 "in-cluster" (i.e. E/W) and "external" (N/S) traffic. This solves the problem of a cluster with its own
 homogenous network MTU being higher than what is considered "safe" for general internet traffic.
 
-We also acknowledge a broader use case which will be out of scope this proposal but we keep this use
+We also acknowledge a broader use case which will be out of scope of this proposal but we keep this use
 case in mind for future work. Ideally the proposed solution here would lend itself well to any such
-functionaltiy.
+functionality.
 
 ## Goals
 
@@ -103,7 +103,7 @@ functionaltiy.
 ## Proposal
 
 This CFP has two parts that together form the E/W N/S MTU management feature: a) the
-configuration model; how we will define and seperate the EW and NS MTU values, and b) the
+configuration model; how we will define and separate the EW and NS MTU values, and b) the
 enforcement mechanism; how we realize these values in a way that allows client applications
 to easily deal with path MTU issues.
 
@@ -112,7 +112,7 @@ to easily deal with path MTU issues.
 Currently Cilium exposes the `--mtu` flag to allow configuring of MTU. If set to `0` this
 enables auto detection where the Agent will attempt to detect the correct MTU from the host
 device. The specified/detected MTU value then has any necessary header overheads subtracted
-such as VXLAN/Geneve tunnel or encryption headers. This computed MTU value that is current
+such as VXLAN/Geneve tunnel or encryption headers. This computed MTU value that is currently
 set in the Pod netns default route MTU as well as endpoint BPF programs (i.e. for cases
 like nodeport geneve DSR redirect to remote backend node). For the remainder of this document
 this computed MTU value is synonymous with our E/W MTU value; auto-detection improvements
@@ -142,20 +142,20 @@ follow. At high level this provides the following functionality: allows configur
 above a "internet-safe" MTU (1500) by providing signalling to both Pod endpoint and host processes
 of PMTU restrictions for out-of-cluster traffic.
 
-Specificaly; we are targetting the use case of a cluster running a network with jumbo-packets
+Specifically; we are targetting the use case of a cluster running a network with jumbo-packets
 enabled (i.e. mtu=9000) and having Cilium also configure itself with `--mtu=9000`. In such case
-external "N/S" traffic should safely have it's MTU restricted to avoid issues with drops, IP
+external "N/S" traffic should safely have its MTU restricted to avoid issues with drops, IP
 fragmentation and black holes while also allowing workloads to make use of the full cluster
 network for performance reasons.
 
 ### MTU enforcement mechanism
 
-Excluding fragmentation, the Kernel network stack has two (network-layer) mechanisms of 
+Excluding fragmentation, the kernel network stack has two (network-layer) mechanisms of 
 dealing with packets which will exceed *known* MTU limits; pre-configured FIB route MTU 
-and PMTUD "discovered"values stored seperately.
+and PMTUD "discovered" values stored separately.
 
-When a packet traverses the kernels IP layer we perform the FIB match as well as lookup
-any known PTMU's - the best known path MTU is the minimum of these.
+When a packet traverses the kernel's IP layer we perform the FIB match as well as look up
+any known PMTUs - the best known path MTU is the minimum of these.
 In a TCP socket this allows the kernel to automatically segment the TCP data in such
 a way that transmitted packet will fit this MTU. For UDP sockets traffic, if dont-fragment
 (DF=1) and the socket PMTU option is set (`IP_PMTUDISC_DO`) then individual `sendmsg4()`
@@ -167,7 +167,7 @@ applications to avoid MTU or fragmentation issues as well as maximizing network
 utilization.
 
 Although we currently rely on route-MTU for enforcement, this document proposes solutions
-that rely on solutions that can take advantage of Ciliums ip identities to distinguish
+that can take advantage of Cilium's IP identities to distinguish
 between N/S and E/W traffic.
 
 It is important to note; these MTU values are not themselves the network path MTU.
@@ -245,7 +245,7 @@ to both Pod and host namespace stack.
 One downside of using PMTUD messaging for this is that the underlying mechanism is purely reactive.
 This means that under normal circumstances we can only be alerted to a violating packet after it
 has been sent.
-According to RFC-1191, following a PMTUD message the offending packet is be dropped. In the kernel
+According to RFC-1191, following a PMTUD message the offending packet is to be dropped. In the kernel
 TCP implementation this notifies that the tcp packet was dropped and needs to be transmitted.
 
 ```
@@ -310,7 +310,7 @@ This mechanism would add another step to these hooks, following socketLB DNAT, w
 lookup remote address identities to classify traffic as either E/W or N/S.
 Within the hook; N/S traffic would have its socket `fwmark` be set to `0x40`. Then during
 ip route matching an `ip rule` would direct this traffic at an alternate route table `100`
-which mirrors the Pods route table, except with a route MTU set using the N/S value.
+which mirrors the Pod's route table, except with a route MTU set using the N/S value.
 
 * bpf_sock.c (connect and sendmsg hooks): following socketLB DNAT we lookup remote endpoint
     against ipcache to retrieve identity. For external "N/S" identities we perform `bpf_setsockopt()`
@@ -420,5 +420,5 @@ and PMTUD messaging mechanism.
 
 #### Phase 2: Add socket level enforcement mechanism
 
-As a follow up, we add the socket layer enforcement mechansim as well as flag to enabled/disable
+As a follow up, we add the socket layer enforcement mechanism as well as flag to enable/disable
 this functionality.
