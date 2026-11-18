@@ -129,18 +129,16 @@ BPF programs via the `CONFIG(device_mtu)` runtime variable (as well as the `#MTU
 variable), ensuring in-cluster traffic such as Geneve DSR redirects to remote backend nodes
 use the correct MTU. This is unchanged by this proposal.
 
-Additionally we propose the following flags:
+Additionally we propose the following flag:
 
-* `--enable-socket-ns-mtu (default: false)`: enables the functionality proposed in
-    [Enforcement Mechanism 2](#enforcement-mechanism-2-via-socket-level-connect4sendmsg-hooks). Requires socketLB to be enabled
-    and `--ns-mtu` to not be `0`.
-* `--ns-mtu (default: 1500)`: Specifies what N/S MTU should be used for N/S MTU enforcement.
-    If zero the N/S MTU enforcement is disabled.
+* `--mtu-north-south (default: 0)`: Specifies the N/S MTU for PMTUD enforcement via ICMP
+    fragmentation-needed. If zero (default), N/S MTU enforcement is disabled and behaviour
+    is identical to current Cilium MTU management.
 
-These will both enable and configure our N/S MTU management. The specific implementation plan will
+This flag enables and configures N/S MTU management. The specific implementation plan will
 follow. At high level this provides the following functionality: allows configuring of Cilium E/W
-above a "internet-safe" MTU (1500) by providing signalling to both Pod endpoint and host processes
-of PMTU restrictions for out-of-cluster traffic.
+above a "internet-safe" MTU (1500) by providing PMTUD signalling to Pod endpoints for
+out-of-cluster traffic.
 
 Specifically; we are targetting the use case of a cluster running a network with jumbo-packets
 enabled (i.e. mtu=9000) and having Cilium also configure itself with `--mtu=9000`. In such case
