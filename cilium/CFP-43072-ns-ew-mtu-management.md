@@ -269,6 +269,49 @@ TCP implementation this notifies that the tcp packet was dropped and needs to be
 
 We will add a similar hook to the host namespace device for egress.
 
+##### Host enforcement
+
+Unlike the Pod LXC case, host namespace enforcement will need to be done on the netdev egress.
+This means PMTUD rewritten packets will be redirected back to the same device (i.e. netdev ifindex).
+Because the kernel pmtud cache update is performed on the ingress ip-layer in kernel-func: `ip_rt_update_pmtu`;
+we need to redirect the PMTUD message to the ingress, treating the ICMP PMTUD message like an incoming packet.
+
+Host datapath, on ingress, already has host-firewall exceptions for ICMP 'unreachable' frag-needed messages
+when the pmtudDiscovery feature is enabled ('true' by default).
+
+For the proposed north-south enforcement, when this is disabled, we will also allow such ICMP PMTUD messages
+to bypass the firewall.
+
+```
+          ┌─────────────────────────────┐
+          │         Host netns          │
+          │                             │
+          │   App ──► eth0              │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+               bpf_host: netdev egress 
+          ┌───────────────────────────────────┐
+          │       cil_to_netdev               │
+          │  ───────────────────────────      │
+          │  generate_icmp_pmtud              │
+          │    ctx_redirect(ctx-ifindex,      │
+          │    BPF_INGRESS)                   │
+          └──────────────┬─────────────────────┘ 
+                         │
+                         ▼
+               bpf_host: netdev ingress 
+          ┌───────────────────────────────────┐
+          │       cil_from_netdev             │
+          │  ───────────────────────────      │
+          │  generate_icmp_pmtud              │
+          │    ctx_redirect(ctx-ifindex,      │
+          │    BPF_INGRESS)                   │
+          └───────────────────────────────────┘ 
+```
+
+##### Pros/Cons/Tradeoffs
+
 Pros:
 * Can be added to both the Pod endpoint and host device TC without interfering with
     host level routing/rules etc.
