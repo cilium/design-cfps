@@ -122,18 +122,12 @@ value; auto-detection improvements are out of scope
 This realized E/W value will become our base "default" MTU to be installed as the device
 and Pod container default route MTU (no change from current approach). 
 
-On top of this we will propose a MTU restriction system on top of this that will signal 
-to applications/system processes as well as the kernel what the correct PMTUD is for N/S traffic.
+Given this, we propose a new MTU restriction approach that signal to applications/system 
+processes as well as the kernel what the correct PMTU is for N/S traffic.
 Namely, this approach will leverage PMTUD messaging - effectively providing a way for Ciliums
 datapath to signal to client sockets regarding path MTU violations.
 
-Cilium already reconciles pod endpoint MTU in response to host netlink route events; this
-proposal follows the same model for any E/W MTU changes. The E/W MTU is also loaded into all TC/XDP
-BPF programs via the `CONFIG(device_mtu)` runtime variable (as well as the `#MTU` environment
-variable), ensuring in-cluster traffic such as Geneve DSR redirects to remote backend nodes
-use the correct MTU. This is unchanged by this proposal.
-
-Additionally we propose the following flag:
+To accommodate this functionality we propose the following flag:
 
 * `--mtu-north-south (default: 0)`: Specifies the N/S MTU for PMTUD enforcement via ICMP
     fragmentation-needed. If zero (default), N/S MTU enforcement is disabled and behavior
@@ -144,11 +138,19 @@ follow. At high level this provides the following functionality: allows configur
 above a "internet-safe" MTU (1500) by providing PMTUD signalling to Pod endpoints for
 out-of-cluster traffic.
 
-Specifically, we are targeting the use case of a cluster running a network with jumbo-packets
+We are seeking to solve the use case of a cluster running a network with jumbo-packets
 enabled (i.e. mtu=9000) and having Cilium also configure itself with `--mtu=9000`. In such case
 external "N/S" traffic should safely have its MTU restricted to avoid issues with drops, IP
 fragmentation and black holes while also allowing workloads to make use of the full cluster
 network for performance reasons.
+This document will henceforth use this as a canonical example when describing the proposed
+feature set: real world use cases will likely differ from this specific example.
+
+Cilium already reconciles pod endpoint MTU in response to host netlink route events; this
+proposal follows the same model for any E/W MTU changes. The E/W MTU is also loaded into all TC/XDP
+BPF programs via the `CONFIG(device_mtu)` runtime variable (as well as the `#MTU` environment
+variable), ensuring in-cluster traffic such as Geneve DSR redirects to remote backend nodes
+use the correct MTU. This is unchanged by this proposal.
 
 ### MTU enforcement mechanism
 
@@ -284,7 +286,7 @@ to bypass the firewall.
           │  generate_icmp_pmtud              │
           │    ctx_redirect(ctx-ifindex,      │
           │    BPF_INGRESS)                   │
-          └──────────────┬─────────────────────┘ 
+          └──────────────┬────────────────────┘ 
                          │
                          ▼
                bpf_host: netdev ingress 
