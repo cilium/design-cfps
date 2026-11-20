@@ -120,9 +120,12 @@ value; auto-detection improvements are out of scope
 (see: [CFP-14339](CFP-14339-cilium-mtu-model.md)).
 
 This realized E/W value will become our base "default" MTU to be installed as the device
-and Pod container default route MTU (no change from current approach). Instead we propose
-adding a MTU restriction system on top of this that will signal to applications/system
-processes as well as the kernel what the correct PMTUD is for N/S traffic.
+and Pod container default route MTU (no change from current approach). 
+
+On top of this we will propose a MTU restriction system on top of this that will signal 
+to applications/system processes as well as the kernel what the correct PMTUD is for N/S traffic.
+Namely, this approach will leverage PMTUD messaging - effectively providing a way for Ciliums
+datapath to signal to client sockets regarding path MTU violations.
 
 Cilium already reconciles pod endpoint MTU in response to host netlink route events; this
 proposal follows the same model for any E/W MTU changes. The E/W MTU is also loaded into all TC/XDP
