@@ -43,7 +43,7 @@ using the kernel route MTU setting to signal to the local kernel or applications
 regarding correct MSS sizing.
 
 This is limited as it only allows setting a single cluster MTU.
-Taking the canonical example where cluster is running on a network with jumbo-packets
+Taking the canonical example where the cluster is running on a network with jumbo-packets
 enabled (say MTU=9000) for performance benefits. This presents the problem
 that Pod traffic bound for other networks may not have a path MTU (PMTU) as big as
 our in-cluster network (i.e. east-west (E/W) traffic).
@@ -67,8 +67,8 @@ Conventionally there are a few ways to deal with the problem of differing networ
     This is considered a generally unreliable mechanism as it relies on all intermediate network hops
     to correctly forward the PMTU ICMP message back to the client. Any drops (i.e. due to firewall rules,
     misconfigured routers, etc) can result in black-holed traffic.
-* Route MTU: Linux provides a mechanism to allow discovery of MTU as traffic is passing through the kernels
-    ip layer using a FIB routing lookups. Traffic that matches a route with a route-MTU set influences: network
+* Route MTU: Linux provides a mechanism to allow discovery of MTU as traffic is passing through the kernel's
+    IP layer using a FIB routing lookup. Traffic that matches a route with a route-MTU set influences: network
     syscall errors, kernel TCP segmentation sizing and in some cases sending of PMTUD ICMP messages.
 * Packet Layer Path MTU discovery (PlPMTUD) and other L4 discovery approaches: General approach of using packet
     layer (i.e. L4) constructs to discover path MTU for a connection. Linux specifically implements this for
@@ -76,7 +76,7 @@ Conventionally there are a few ways to deal with the problem of differing networ
     path MTU. Downsides is that it is protocol specific and also introduces possible network connection latency
     during probing phase.
 
-This CFP proposes extending Ciliums current flat MTU management approach into one that distinguishes between
+This CFP proposes extending Cilium's current flat MTU management approach into one that distinguishes between
 "in-cluster" (i.e. E/W) and "external" (N/S) traffic. This solves the problem of a cluster with its own
 homogenous network MTU being higher than what is considered "safe" for general internet traffic.
 
@@ -113,10 +113,11 @@ Currently Cilium exposes the `--mtu` flag to allow configuring of MTU. If set to
 enables auto detection where the Agent will attempt to detect the correct MTU from the host
 device. The specified/detected MTU value then has any necessary header overheads subtracted
 such as VXLAN/Geneve tunnel or encryption headers. This computed MTU value that is currently
-set in the Pod netns default route MTU as well as endpoint BPF programs (i.e. for cases
-like nodeport geneve DSR redirect to remote backend node). For the remainder of this document
-this computed MTU value is synonymous with our E/W MTU value; auto-detection improvements
-are out of scope (see [CFP-14339](CFP-14339-cilium-mtu-model.md)).
+set as the Pod netns default route MTU as well as in endpoint BPF programs; it is used only for
+cases like NodePort Geneve DSR redirect to remote backend nodes.
+For the remainder of this document this computed MTU value is synonymous with our E/W MTU 
+value; auto-detection improvements are out of scope 
+(see: [CFP-14339](CFP-14339-cilium-mtu-model.md)).
 
 This realized E/W value will become our base "default" MTU to be installed as the device
 and Pod container default route MTU (no change from current approach). Instead we propose
@@ -132,7 +133,7 @@ use the correct MTU. This is unchanged by this proposal.
 Additionally we propose the following flag:
 
 * `--mtu-north-south (default: 0)`: Specifies the N/S MTU for PMTUD enforcement via ICMP
-    fragmentation-needed. If zero (default), N/S MTU enforcement is disabled and behaviour
+    fragmentation-needed. If zero (default), N/S MTU enforcement is disabled and behavior
     is identical to current Cilium MTU management.
 
 This flag enables and configures N/S MTU management. The specific implementation plan will
@@ -140,7 +141,7 @@ follow. At high level this provides the following functionality: allows configur
 above a "internet-safe" MTU (1500) by providing PMTUD signalling to Pod endpoints for
 out-of-cluster traffic.
 
-Specifically; we are targetting the use case of a cluster running a network with jumbo-packets
+Specifically, we are targeting the use case of a cluster running a network with jumbo-packets
 enabled (i.e. mtu=9000) and having Cilium also configure itself with `--mtu=9000`. In such case
 external "N/S" traffic should safely have its MTU restricted to avoid issues with drops, IP
 fragmentation and black holes while also allowing workloads to make use of the full cluster
@@ -155,7 +156,7 @@ and PMTUD "discovered" values stored separately.
 When a packet traverses the kernel's IP layer we perform the FIB match as well as look up
 any known PMTUs - the best known path MTU is the minimum of these.
 In a TCP socket this allows the kernel to automatically segment the TCP data in such
-a way that transmitted packet will fit this MTU. For UDP sockets traffic, if dont-fragment
+a way that transmitted packets will fit this MTU. For UDP socket traffic, if dont-fragment
 (DF=1) and the socket PMTU option is set (`IP_PMTUDISC_DO`) then individual `sendmsg4()`
 syscalls will return an error for the application to decide on how to handle it (in many
 cases protocols built on top of UDP can use this to manage segmentation).
@@ -165,38 +166,14 @@ applications to avoid MTU or fragmentation issues as well as maximizing network
 utilization.
 
 Although we currently rely on route-MTU for enforcement, this document proposes solutions
-that can take advantage of Cilium's IP identities to distinguish
-between N/S and E/W traffic.
+that can take advantage of Cilium's IP identities to distinguish between N/S and E/W traffic.
 
 It is important to note; these MTU values are not themselves the network path MTU.
 MTU is fundamentally a property of a network path, resulting from intermediate networks
 having physical hardware limits, as well as the possibility of things like network tunnels
 and encryption which introduce unexpected header overheads to existing traffic.
 
-#### Proposed Approach: Hybrid approach using mechanisms 1. and 2. (described below)
-
-Mechanism 1 (PMTUD) is our primary approach: it can be applied at both the Pod endpoint TC
-and the host namespace device TC, has no dependency on socketLB, and covers all traffic types.
-However, PMTUD is purely reactive — the first violating packet is dropped before the kernel
-PMTU cache is updated, causing a TCP retransmit delay. Additionally, PMTUD cache entries are
-per-destination-IP and expire after `net.ipv4.route.mtu_expires` (default 600s), so each new
-external destination requires its own drop-and-recover cycle.
-
-Mechanism 2 (socket hooks) addresses these limitations specifically for Pod netns TCP: by
-marking sockets at connect time, the kernel selects the correct route MTU before the first
-packet is sent, MSS is correctly negotiated at connection establishment and never renegotiated,
-and there are no PMTUD cache expiry concerns. However, it requires socketLB to be enabled and
-is not practical for the host namespace due to routing table complexity.
-
-We therefore propose the following hybrid approach:
-
-* [PMTUD (Mechanism 1)](#enforcement-mechanism-1-send-pmtud-messages-from-tc-back-to-pod):
-    Primary mechanism. Covers all traffic types for both Pod and host netns.
-* [Socket level routing hooks (Mechanism 2)](#enforcement-mechanism-2-via-socket-level-connect4sendmsg-hooks):
-    Optimization for Pod netns TCP. Establishes correct MSS at connect time, avoiding the
-    drop-and-recover cycle for the common TCP case. Gated behind `--enable-socket-ns-mtu`.
-
-#### Enforcement Mechanism 1. Send PMTUD messages from TC back to Pod
+#### PMTUD Enforcement Mechanism: Send PMTUD messages from TC back to Pod
 
 One mechanism we already employ in Cilium is crafting and sending back synthetic
 PMTU messages from Cilium's datapath.
@@ -234,8 +211,7 @@ endpoint_is_external(const struct remote_endpoint_info *info)
 ```
 
 Unlike the general case of PMTUD, using it in this context avoids any pitfalls
-of DF/PTB packet being dropped along the return path (the return path is all cilium
-managed local links/veths). As this PMTU message is expected to arrive back at
+of DF/PTB packet being dropped along the return path (the return path is all Cilium-managed local links/veths). As this PMTU message is expected to arrive back at
 the Pod namespace the kernel network stack will cache the emitted MTU value.
 Essentially this proposes that Cilium take on the role of sending PMTUD messages
 to both Pod and host namespace stack.
@@ -244,7 +220,7 @@ One downside of using PMTUD messaging for this is that the underlying mechanism 
 This means that under normal circumstances we can only be alerted to a violating packet after it
 has been sent.
 According to RFC-1191, following a PMTUD message the offending packet is to be dropped. In the kernel
-TCP implementation this notifies that the tcp packet was dropped and needs to be transmitted.
+TCP implementation this notifies that the TCP packet was dropped and needs to be retransmitted.
 
 ```
           ┌─────────────────────────────┐
@@ -267,13 +243,21 @@ TCP implementation this notifies that the tcp packet was dropped and needs to be
                                                      If necessary; fixup ICMP src addr to be svc VIP.
 ```
 
-We will add a similar hook to the host namespace device for egress.
+For the lxc ingress side, the PMTUD redirects directly back to the inner Pod device. This happens after
+both service DNAT (both socket LB or in TC), and policy enforcement. Therefore the lookup we perform is
+on the post svc LB translated packet and blocked packets will be dropped before the PMTUD check/redirect. 
+LXC ingress has a host firewall check but that also happens after initial policy lookup. The PMTUD
+will happen before any host policy checks, meaning that the PMTUD may be initially delivered for a
+host endpoint that will be dropped by the firewall.
+
+The LXC ingress side is irrelevant as the generated PMTUD messages are always redirected back into
+the Pod inner device.
 
 ##### Host enforcement
 
 Unlike the Pod LXC case, host namespace enforcement will need to be done on the netdev egress.
 This means PMTUD rewritten packets will be redirected back to the same device (i.e. netdev ifindex).
-Because the kernel pmtud cache update is performed on the ingress ip-layer in kernel-func: `ip_rt_update_pmtu`;
+Because the kernel pmtud cache update is performed on the ingress ip-layer in kernel function `ip_rt_update_pmtu`;
 we need to redirect the PMTUD message to the ingress, treating the ICMP PMTUD message like an incoming packet.
 
 Host datapath, on ingress, already has host-firewall exceptions for ICMP 'unreachable' frag-needed messages
@@ -317,9 +301,12 @@ Pros:
     host level routing/rules etc.
 * Uses external endpoint identity from ipcache to determine if traffic is N/S.
     This avoids the difficult task of computing and duplicating external/internal CIDR ranges.
+    Unlike possible route MTU based approaches; this means much cleaner integration with existing
+    Cilium modes as well as avoiding the need to manage user host namespace ip routes.
 * Lends itself well to the general network MTU case mentioned in the introduction.
     A more general approach would combine the identity based checking with a LPM network MTU
-    table that matches network CIDRs.
+    table that matches network CIDRs. In the future we can adapt such use cases by also matching
+    on LPM map based "route-MTU" policies (we leave that as future work).
 
 Cons:
 * Must be set up as fail open; PMTUD messages can only lower known PMTUD on the Pod
@@ -327,7 +314,7 @@ Cons:
 * PMTUD can only react: PMTUD messages are sent as a response to violating packet being
     sent. In the Kernel TCP stack a PMTUD matching the socket will result in TCP re-transmit.
     This may introduce latency into connections that rely on the PMTUD mechanism for recovery.
-* PMTUD is also on specific endpoint IPs not CIDR ranges; this means that every
+* PMTUD is also on specific endpoint IPs, not CIDR ranges; this means that every
     subsequent TCP socket connecting to a different host will also need to wait
     for the PMTUD and retransmit.
 * Finally, cached PMTUD entries are only held for mtu_expires=600s so even on established
@@ -343,123 +330,60 @@ Cons:
     each outbound packet adding some slight overhead to such connections. This is likely 
     mitigated by there being much less host traffic being processed.
 
-#### Enforcement Mechanism 2. Via socket level connect4/sendmsg hooks
-
-Cilium currently installs kfunc hooks for the `connect` and `sendmsg` syscalls to implement
-service LB DNAT at the socket layer (prior to INGRESS TC).
-This mechanism would add another step to these hooks, following socketLB DNAT, we would
-lookup remote address identities to classify traffic as either E/W or N/S.
-Within the hook; N/S traffic would have its socket `fwmark` be set to `0x40`. Then during
-ip route matching an `ip rule` would direct this traffic at an alternate route table `100`
-which mirrors the Pod's route table, except with a route MTU set using the N/S value.
-
-* bpf_sock.c (connect and sendmsg hooks): following socketLB DNAT we lookup remote endpoint
-    against ipcache to retrieve identity. For external "N/S" identities we perform `bpf_setsockopt()`
-    to set the fwmark of the socket to be `0x40`.
-* On Pod endpoint `CNI ADD` (as well as reconciled later by Cilium agent): we install the following:
-
-```bash
-ip rule add pref 1000 fwmark 0x40 lookup 100
-ip route add 10.244.1.52 dev eth0 scope link table 100
-ip route add default via 10.244.1.52 dev eth0 mtu 1500 table 100
-```
-
-```
-        ┌───────────────┐
-        │  ip rule eval │
-        │  (pref order) │
-        └───────┬───────┘
-                │
-                ▼
-       ┌─────────────────────┐
-       │   fwmark == 0x40?   │
-       └───┬─────────────┬───┘
-           │             │
-          YES            NO
-           │             │
-           ▼             ▼
-  ┌─────────────────┐  ┌─────────────────┐
-  │ table 100       │  │   main table    │
-  │ ─────────────── │  │ ─────────────── │
-  │ default         │  │ default         │
-  │ via 10.244.1.52 │  │ via 10.244.1.52 │
-  │ dev eth0        │  │ dev eth0        │
-  │ mtu 1500 (N/S)  │  │ mtu 9000 (E/W)  │
-  └────────┬────────┘  └────────┬────────┘
-           │                    │
-           └─────────┬──────────┘
-                     │
-                     ▼
-                   eth0
-```
-
-TCP/`connect()` case:
-
-* Client Pod opens socket via connect syscall with specified external endpoint tuple.
-* Connect hook is invoked, socket tuple is DNAT-ed.
-* Destination endpoint addr is looked up in ipcache map (LPM).
-* If endpoint is *not* a known cluster identity we set sock opts with `fwmark=0x40`.
-* Client sends data over socket:
-    * Packet is sent with `fwmark=0x40` in skb.
-    * Packet is matched against FIB and hits ip rule for `fwmark == 0x40`; rule instructs
-        to use route table 100.
-    * Packet is matched against route table 100; hits default route `0.0.0.0/0` with route
-        route MTU=1500.
-
-The reason we choose to have the E/W MTU on the default table/route is that this is what
-accepted listener (i.e. server) connections will use to negotiate their end of TCP MSS.
-By default we want this to be the "high" E/W MTU as otherwise in-cluster connections
-would get clamped down by the server Pod using the N/S value.
-For inbound connections from external endpoints this is fine since MSS is still clamped
-down by the minimum of the client endpoints MTU.
-
-We opt to mark the socket on the negative E/W case: failing to lower the MTU is considered
-more harmful than a false positive in which an artificially low value is used.
-
-UDP/Connect case: Same as TCP/Connect case; only difference is how kernel handles subsequent
-    sendmsg len violations.
-
-UDP/Connectionless case:
-* UDP socket is created
-* Client sends data via sendmsg
-* sendmsg hook is invoked; sendmsg dst is DNAT-ed.
-* Message destination endpoint addr is looked up in ipcache map.
-* Message is sent as-is, using default route (mtu=9000).
-* If endpoint is *not* a known cluster identity we set sock opts with fwmark=0x40.
-* Subsequent message is sent; socket is marked and ip routing rule applies so
-    we match on route table 100 which has MTU=1500.
-
-Pros:
-* Allows for using external endpoint identity from ipcache to determine if traffic is N/S.
-    This avoids complex Pod/Host ns routing setups.
-* Efficient on the most common TCP socket use case: fwmark is installed immediately on the
-    connect hook — no waiting for PMTUD message/retransmits.
-    Only overhead incurred is the additional LPM lookup for external endpoint identity.
-
-Cons:
-* Requires socketLB feature to be enabled (default=`true`) for MTU management to work.
-* On UDP connectionless sockets the first message sent may black-hole silently as we depend on the
-    sendmsg syscall to mark the socket (this is also true of Mechanism 1 as we cannot know the
-    correct PMTU for a packet on an unbound UDP socket until it is sent).
-    * Otherwise, UDP sockets that use connect to "connect" to a specific external endpoint see the
-        same benefits as the TCP case.
-
 ### Upgrade/downgrade considerations
 
-Because with `--enable-ns-mtu=false` our fallback behavior is the same as existing
-versions that have the `--mtu` functionality; downgrading is simple as it simply drops
-the NS MTU lowering (assuming no configuration changes on the downgrade).
-For the upgrade path, this is also unaffected for the same reasons.
+Because the semantics of `--mtu` don't change, when upgrading there will be no functional
+difference unless `--mtu-north-south` is set away from the default of 0 (disabled).
+If the user enabled north-south enforcement during or after the upgrade then the 
+north-south PMTUD functionality will stop working upon downgrade. All else equal, any
+endpoints datapath will continue to work the same.
 
-### Implementation plan
+The same applies to host namespace networking.
 
-#### Phase 1: Add E/W N/S configuration model and implement PMTUD-based enforcement mechanism
+#### Testing
 
-We don't need to add both enforcement mechanisms at once. In fact we can gain
-much of the benefit of this feature by implementing the configuration approach
-and PMTUD messaging mechanism.
+As it is key that local generated PMTUD messages are never dropped on their way back
+to the Pod, we will want to add additional checks to the cilium e2e connectivity
+tests "no-unexpected-drops" check to flag any dropped PMTUD messages.
+In general, under most CI runtimes, we shouldn't expect to see these messages
+otherwise.
 
-#### Phase 2: Add socket level enforcement mechanism
+Otherwise implementation will focus heavily on unit testing, leaving e2e
+as a final sanity check for functionality. We will write bpf unit tests
+as generic headers so we can re-run them under a comprehensive set of configs.
 
-As a follow up, we add the socket layer enforcement mechanism as well as flag to enable/disable
-this functionality.
+Primary BPF testing coverage cases:
+* from_container:
+    * Packet is correctly checked for MTU against wire size (i.e. simulate GSO packets).
+        * Packets dropped by policy should not be rewritten.
+        * Host bound packets are still rewritten before host-firewall policy.
+    * Offending packets are rewritten and redirected correctly as PMTUD messages.
+        * Using scapy framework, check PMTUD payload for correctness ensuring Pod
+            kernel does not drop the incoming packet.
+* to_netdev:
+    * Packet is correctly checked for MTU against wire size (i.e. simulate GSO packets).
+    * Offending packets are rewritten and redirected correctly as PMTUD messages to from_netdev.
+
+#### Observability and operational features
+
+Datapath metrics:
+
+* Counter: `cilium_north_south_pmtud_message_total`: counts the number of
+    generated north-south PMTUD messages generated and sent. This is also
+    the number of drops due to packets exceeding n/s MTU.
+    This is useful for detecting workloads frequently exceeding N/S MTU
+    possibly due to misconfiguration or incorrect MTU handling (ex. such
+    as for UDP sockets).
+
+Control-plane metrics:
+
+* Gauge: `cilium_north_south_mtu`: current derived north south MTU size.
+    If north-south mtu enforcement is disabled due to the configured value
+    being below the realized `--mtu` value (possibly auto-detected) then
+    this will show '0'.
+
+* Gauge: `cilium_east_west_mtu`: current Cilium derived internal MTU size.
+    This is the MTU applied to the Pod inner default route after subtracting
+    overheads.
+    Because Cilium expects link MTUs to be heterogeneous this can double
+    as a way to easily detect misconfigured cluster networks or nodes.
