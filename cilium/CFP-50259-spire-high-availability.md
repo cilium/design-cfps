@@ -1,4 +1,4 @@
-# HA SPIRE Registrations via SPIRE Controller Manager
+# CFP-50259: SPIRE High Availability
 
 **SIG: SIG-ServiceMesh**
 
