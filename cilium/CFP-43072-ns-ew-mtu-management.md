@@ -70,6 +70,8 @@ Conventionally there are a few ways to deal with the problem of differing networ
 * Route MTU: Linux provides a mechanism to allow discovery of MTU as traffic is passing through the kernel's
     IP layer using a FIB routing lookup. Traffic that matches a route with a route-MTU set influences: network
     syscall errors, kernel TCP segmentation sizing and in some cases sending of PMTUD ICMP messages.
+* Link MTU: MTU value configured on individual links, following routing decisions the link MTU is used as the
+    backstop MTU value if no route or PMTUD derived path-MTU was discovered.
 * Packet Layer Path MTU discovery (PlPMTUD) and other L4 discovery approaches: General approach of using packet
     layer (i.e. L4) constructs to discover path MTU for a connection. Linux specifically implements this for
     TCP stack. Roughly speaking it uses a binary-search like probing approach to discover a reasonably high
