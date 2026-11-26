@@ -199,6 +199,16 @@ see if it exceeds the configured N/S MTU. If the packet length exceeds the N/S M
 drop the packet and respond with ICMP frag-needed (ICMPv6 Packet-too-big in the case
 of ipv6).
 
+For the special case that traffic is classified as in-cluster bound but to a NodePort
+with DSR enabled, we would also subtract the DSR path overhead. Effectively performing
+Cilium's existing pmtu-discovery functionality (this feature performs a similar PMTUD
+messaging from on NodePort ingress to account for additional DSR path overhead).
+As pmtu-discovery is related to the E/W MTU (i.e. `--mtu` value) this would still be
+toggled by the `enable-pmtu-discovery` flag as this is independent from N/S considerations.
+External NodePort PMTUD will still require that `pmtuDiscovery.enabled` be set.
+In the case that such traffic is classified as N/S, such as if Node IP not in the ipcache
+is used, then we simply fall back to the N/S MTU which is lower than E/W.
+
 The following function describes how we classify between N/S and E/W:
 
 ```c
